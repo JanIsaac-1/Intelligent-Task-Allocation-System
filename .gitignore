@@ -1,0 +1,62 @@
+# ==============================================================================
+# Python & Virtual Environments
+# ==============================================================================
+venv/
+backend/venv/
+.venv/
+env/
+ENV/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# ==============================================================================
+# Environment Secrets & Passwords (NEVER COMMIT)
+# ==============================================================================
+.env
+backend/.env
+*.env.local
+*.env.*.local
+
+# ==============================================================================
+# Node.js & Frontend Builds
+# ==============================================================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+.npm/
+
+# ==============================================================================
+# Static, Media, Logs & Temp Files
+# ==============================================================================
+backend/staticfiles/
+backend/media/
+*.sqlite3
+*.db
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+~$*
+*.log
+
+# ==============================================================================
+# Root Research Files, Datasets & Documents (Only keep backend/ and frontend/)
+# ==============================================================================
+/*.docx
+/*.pdf
+/*.xml
+/*.txt
+/*.csv
+/*.json
+/*.ipynb
+/*.py
+/database/
+/Dataset/
+/diagrams/
