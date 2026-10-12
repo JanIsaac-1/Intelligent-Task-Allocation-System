@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SystemUser, AllocationWeights, AlgorithmPolicy, Role } from '../../types';
-import { OPTIMIZATION_PRESETS, MASTER_DOMAINS, PresetConfig } from '../../data/mockData';
+import { OPTIMIZATION_PRESETS, MASTER_DOMAINS, PresetConfig } from '../../data/config';
 import {
   Users,
   Shield,

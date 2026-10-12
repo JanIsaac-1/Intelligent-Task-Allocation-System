@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_ALGORITHM_POLICY,
   PresetConfig,
-} from './data/mockData';
+} from './data/config';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { AdminDashboard } from './components/views/AdminDashboard';
 import { AgentMobileView } from './components/views/AgentMobileView';

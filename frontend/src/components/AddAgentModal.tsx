@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AgentProfile } from '../types';
+import { uploadCvPdf } from '../services/api';
 import { UploadCloud, FileText, CheckCircle2, Plus, X, Trash2, Loader2 } from 'lucide-react';
 
 interface AddAgentModalProps {
@@ -24,56 +25,33 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ onAddAgent, onClos
   const [lat, setLat] = useState(-1.2921);
   const [lng, setLng] = useState(36.8219);
 
-  // Handle PDF / Document Upload to auto-fill form
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle PDF / Document Upload to auto-fill form using real backend NLP
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadedFileName(file.name);
     setIsParsing(true);
 
-    // Simulate NLP Pipeline Extraction (spaCy + SBERT)
-    setTimeout(() => {
-      if (file.name.toLowerCase().includes('elec') || file.name.toLowerCase().includes('power') || file.name.toLowerCase().includes('solar')) {
-        setName('Alex Mwende');
-        setPhone('+254 745 678 901');
-        setTitle('Senior Solar & Electrical Microgrid Technician');
-        setDomain('Electrical');
-        setExperienceYears(5);
-        setSkillsText('Solar inverter wiring, battery bank diagnostics, PV module testing, high-voltage isolators, load profiling');
-        setCertificationsText('EPRA Solar PV Class T3, Certified Electrical Inspector');
-        setBio('Specialist in commercial rooftop solar installations, battery energy storage systems (BESS), and hybrid electrical grid changeovers.');
-        setAddressName('Upper Hill (Mara Rd)');
-        setLat(-1.2980);
-        setLng(36.8150);
-      } else if (file.name.toLowerCase().includes('plumb') || file.name.toLowerCase().includes('water')) {
-        setName('Dennis Kamau');
-        setPhone('+254 718 234 890');
-        setTitle('Hydraulic Systems & Water Treatment Tech');
-        setDomain('Plumbing');
-        setExperienceYears(6);
-        setSkillsText('High-pressure booster repair, water flow metering, wastewater filtration, copper brazing, irrigation solenoid valves');
-        setCertificationsText('Certified Master Plumber, Water Quality Specialist');
-        setBio('Lead technician for commercial hydraulic pumping stations and municipal backup water treatment systems.');
-        setAddressName('Industrial Area (Lunga Lunga Rd)');
-        setLat(-1.3120);
-        setLng(36.8520);
-      } else {
-        setName('Faith Chebet');
-        setPhone('+254 703 112 334');
-        setTitle('Lead Fiber Splicing & Wireless Network Engineer');
-        setDomain('Telecommunications');
-        setExperienceYears(4);
-        setSkillsText('Fiber optic ribbon splicing, OTDR line analysis, GPON OLT configuration, Microwave radio alignment, Ethernet termination');
-        setCertificationsText('FOA Certified Fiber Splicer, Ubiquiti Enterprise Wireless Admin, CCNA');
-        setBio('Experienced in long-distance optical trunk maintenance, emergency backbone fiber cuts, and enterprise campus wireless networks.');
-        setAddressName('Westlands (Waiyaki Way)');
-        setLat(-1.2680);
-        setLng(36.8020);
+    try {
+      const parsed = await uploadCvPdf(file);
+      if (parsed.detected_domain) {
+        setDomain(parsed.detected_domain as AgentProfile['domain']);
       }
-
+      if (parsed.extracted_skills && parsed.extracted_skills.length > 0) {
+        setSkillsText(parsed.extracted_skills.join(', '));
+      }
+      if (parsed.detected_certifications && parsed.detected_certifications.length > 0) {
+        setCertificationsText(parsed.detected_certifications.join(', '));
+      }
+      if (parsed.text_preview) {
+        setBio(parsed.text_preview.slice(0, 300));
+      }
+    } catch (err) {
+      console.warn('Backend CV parser error:', err);
+    } finally {
       setIsParsing(false);
-    }, 900);
+    }
   };
 
   const handleClearFile = () => {

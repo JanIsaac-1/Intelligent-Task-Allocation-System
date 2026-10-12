@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Task, AgentProfile, AllocationWeights } from '../types';
-import { rankAgentsForTask } from '../utils/mockAllocation';
-import { formatDistance } from '../utils/geo';
-import { Sliders, Award, Compass, Briefcase, Zap, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Task, AgentProfile, AllocationWeights, AllocationScore } from '../types';
+import { rankCandidates } from '../services/api';
+import { formatDistance, calculateHaversineDistance, calculateProximityScore } from '../utils/geo';
+import { Sliders, Award, Compass, Briefcase, Zap, X, Loader2 } from 'lucide-react';
 
 interface AllocationModalProps {
   task: Task;
@@ -22,11 +22,72 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
   onClose,
 }) => {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [rankedCandidates, setRankedCandidates] = useState<AllocationScore[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Compute live ranking based on current weights
-  const rankedCandidates = useMemo(() => {
-    return rankAgentsForTask(agents, task, weights);
-  }, [agents, task, weights]);
+  // Compute live ranking from Django SBERT & MCDM Allocation Engine
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+
+    const computeLocalCandidates = (): AllocationScore[] => {
+      return agents.map((agent) => {
+        const distanceKm = calculateHaversineDistance(
+          agent.currentLocation.lat,
+          agent.currentLocation.lng,
+          task.location.lat,
+          task.location.lng
+        );
+        const proximityScore = calculateProximityScore(distanceKm);
+        const workloadScore = Math.max(0.1, 1 - agent.activeTaskCount * 0.3);
+        const domainMatch = agent.domain.toLowerCase() === task.category.toLowerCase() ? 0.85 : 0.35;
+        const compositeScore = parseFloat(
+          (
+            weights.wSkill * domainMatch +
+            weights.wProximity * proximityScore +
+            weights.wWorkload * workloadScore
+          ).toFixed(3)
+        );
+        return {
+          agentId: agent.id,
+          agentName: agent.name,
+          agentTitle: agent.title,
+          domain: agent.domain,
+          skillScore: domainMatch,
+          proximityScore,
+          distanceKm,
+          workloadScore,
+          compositeScore,
+          breakdown: weights,
+        };
+      }).sort((a, b) => b.compositeScore - a.compositeScore);
+    };
+
+    if (!isNaN(Number(task.id))) {
+      rankCandidates(task.id, weights)
+        .then((data) => {
+          if (!isMounted) return;
+          if (data && data.length > 0) {
+            setRankedCandidates(data);
+          } else {
+            setRankedCandidates(computeLocalCandidates());
+          }
+          setIsLoading(false);
+        })
+        .catch(() => {
+          if (!isMounted) return;
+          setRankedCandidates(computeLocalCandidates());
+          setIsLoading(false);
+        });
+    } else {
+      setRankedCandidates(computeLocalCandidates());
+      setIsLoading(false);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [task.id, weights.wSkill, weights.wProximity, weights.wWorkload, agents]);
 
   const topAgent = rankedCandidates[0];
   const chosenAgentId = selectedCandidateId || topAgent?.agentId;
