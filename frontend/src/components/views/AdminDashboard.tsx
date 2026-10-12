@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AgentProfile, Task, AllocationWeights } from '../../types';
 import { MapView } from '../MapView';
 import { AllocationModal } from '../AllocationModal';
@@ -14,6 +14,7 @@ import {
   RotateCcw,
   CheckCircle,
   Briefcase,
+  Radio,
 } from 'lucide-react';
 import { formatDistance, calculateHaversineDistance } from '../../utils/geo';
 
@@ -26,6 +27,7 @@ interface AdminDashboardProps {
   onAddAgent: (agent: AgentProfile) => void;
   onToggleAgentAvailability: (agentId: string) => void;
   onReassignTask: (taskId: string) => void;
+  onSimulateGpsMovement?: (agentId: string) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -37,12 +39,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddAgent,
   onToggleAgentAvailability,
   onReassignTask,
+  onSimulateGpsMovement,
 }) => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>(tasks[0]?.id);
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
   const [allocationModalTask, setAllocationModalTask] = useState<Task | null>(null);
   const [showAddAgentModal, setShowAddAgentModal] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'tasks' | 'agents'>('tasks');
+
+  useEffect(() => {
+    if (!selectedTaskId && tasks.length > 0) {
+      setSelectedTaskId(tasks[0].id);
+    }
+  }, [tasks, selectedTaskId]);
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending');
   const activeTasks = tasks.filter((t) => t.status === 'assigned' || t.status === 'in_progress');
@@ -321,15 +330,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleAgentAvailability(agent.id);
-                        }}
-                        className="text-[10px] text-blue-600 hover:underline font-semibold"
-                      >
-                        Change Status
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {onSimulateGpsMovement && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAgentId(agent.id);
+                              onSimulateGpsMovement(agent.id);
+                            }}
+                            className="text-[10px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded font-semibold flex items-center gap-1 shadow-2xs transition"
+                            title="Simulate GPS movement and update position"
+                          >
+                            <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />
+                            <span>Ping GPS</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleAgentAvailability(agent.id);
+                          }}
+                          className="text-[10px] text-blue-600 hover:underline font-semibold"
+                        >
+                          Change Status
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -349,9 +375,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-slate-400" />
-                        <span>{agent.currentLocation.addressName}</span>
+                      <div className="flex items-center gap-1.5 font-mono text-slate-600">
+                        <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span>GPS: {agent.currentLocation.lat.toFixed(4)}, {agent.currentLocation.lng.toFixed(4)}</span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-700 font-medium">
                         <span>Active: {agent.activeTaskCount}</span>

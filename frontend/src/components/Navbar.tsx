@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Smartphone, PlusCircle, BarChart3, MapPin, Users, Settings, LogOut } from 'lucide-react';
+import { ShieldCheck, Smartphone, PlusCircle, BarChart3, MapPin, Users, Settings, LogOut, Wrench } from 'lucide-react';
 import { AgentProfile, Task, AuthUser } from '../types';
 
 export type ActiveTab = 'admin' | 'agent' | 'requester' | 'analytics' | 'admin-portal';
@@ -71,7 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Field Agent View - Admin or Agent */}
+          {/* Field Agent Operations - Admin or Agent */}
           {(isAdmin || isAgent) && (
             <button
               onClick={() => onTabChange('agent')}
@@ -81,8 +81,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              <Smartphone className="w-3.5 h-3.5 text-slate-700" />
-              <span>Field Agent View</span>
+              <Wrench className="w-3.5 h-3.5 text-slate-700" />
+              <span>Field Operations</span>
             </button>
           )}
 

@@ -169,9 +169,9 @@ export const INITIAL_AGENTS: AgentProfile[] = [
     bio: 'Specialized in high-density underground fiber repairs and optical distribution frame installations across Nairobi metro.',
     availability: 'available',
     currentLocation: {
-      lat: -1.2921,
-      lng: 36.8219,
-      addressName: 'Nairobi CBD (Kenyatta Ave)'
+      lat: -1.2618,
+      lng: 36.8042,
+      addressName: 'Westlands / Sarit Centre'
     },
     activeTaskCount: 0,
     completedTasksCount: 42,
@@ -193,9 +193,9 @@ export const INITIAL_AGENTS: AgentProfile[] = [
     bio: 'Experienced electrical technician with deep expertise in commercial generator maintenance and emergency distribution panel failures.',
     availability: 'available',
     currentLocation: {
-      lat: -1.3090,
-      lng: 36.8123,
-      addressName: 'Madaraka / Strathmore Area'
+      lat: -1.2982,
+      lng: 36.7891,
+      addressName: 'Kilimani / Yaya Centre'
     },
     activeTaskCount: 1,
     completedTasksCount: 38,
@@ -217,9 +217,9 @@ export const INITIAL_AGENTS: AgentProfile[] = [
     bio: 'Focused on precision climate systems for data centers, corporate server rooms, and commercial HVAC maintenance.',
     availability: 'busy',
     currentLocation: {
-      lat: -1.2650,
-      lng: 36.8040,
-      addressName: 'Westlands (Parklands Rd)'
+      lat: -1.3005,
+      lng: 36.8225,
+      addressName: 'Madaraka / Strathmore University'
     },
     activeTaskCount: 2,
     completedTasksCount: 29,
@@ -241,9 +241,9 @@ export const INITIAL_AGENTS: AgentProfile[] = [
     bio: 'Heavy commercial plumbing specialist handling municipal mains, high-rise pressure boosters, and automated irrigation valves.',
     availability: 'available',
     currentLocation: {
-      lat: -1.2985,
-      lng: 36.7830,
-      addressName: 'Kilimani (Argwings Kodhek)'
+      lat: -1.2833,
+      lng: 36.8167,
+      addressName: 'Nairobi CBD / City Centre'
     },
     activeTaskCount: 0,
     completedTasksCount: 51,

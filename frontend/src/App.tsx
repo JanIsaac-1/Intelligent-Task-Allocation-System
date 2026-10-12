@@ -10,10 +10,6 @@ import {
   AuthUser,
 } from './types';
 import {
-  INITIAL_AGENTS,
-  INITIAL_TASKS,
-  INITIAL_LOGS,
-  INITIAL_SYSTEM_USERS,
   DEFAULT_ALGORITHM_POLICY,
   PresetConfig,
 } from './data/mockData';
@@ -28,6 +24,7 @@ import {
   fetchTasks,
   fetchAgents,
   fetchUsers,
+  fetchLogs,
   createTask,
   assignAgentToTask,
   reassignTask,
@@ -60,16 +57,16 @@ export const App: React.FC = () => {
     return 'admin';
   });
 
-  const [agents, setAgents] = useState<AgentProfile[]>(INITIAL_AGENTS);
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [weights, setWeights] = useState<AllocationWeights>({
     wSkill: 0.50,
     wProximity: 0.30,
     wWorkload: 0.20,
   });
-  const [systemUsers, setSystemUsers] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [policy, setPolicy] = useState<AlgorithmPolicy>(DEFAULT_ALGORITHM_POLICY);
-  const [logs, setLogs] = useState<SystemLog[]>(INITIAL_LOGS);
+  const [logs, setLogs] = useState<SystemLog[]>([]);
 
   const addLog = (action: string, details: string, type: SystemLog['type'] = 'info') => {
     const newLog: SystemLog = {
@@ -87,34 +84,46 @@ export const App: React.FC = () => {
     let isMounted = true;
     const hydrateFromBackend = async () => {
       try {
-        const [backendTasks, backendAgents, backendUsers] = await Promise.all([
+        const [backendTasks, backendAgents, backendUsers, backendLogs] = await Promise.all([
           fetchTasks(),
           fetchAgents(),
           fetchUsers(),
+          fetchLogs(),
         ]);
         if (!isMounted) return;
-        if (backendTasks && backendTasks.length > 0) {
-          setTasks(backendTasks);
-        }
-        if (backendAgents && backendAgents.length > 0) {
-          setAgents(backendAgents);
-        }
-        if (backendUsers && backendUsers.length > 0) {
-          setSystemUsers(backendUsers);
+        setTasks(backendTasks || []);
+        setAgents(backendAgents || []);
+        setSystemUsers(backendUsers || []);
+        if (backendLogs && backendLogs.length > 0) {
+          setLogs(backendLogs);
         }
         addLog(
           'Database Synchronized',
-          `PostgreSQL connected: loaded ${backendTasks.length} tasks, ${backendAgents.length} technicians, and ${backendUsers.length} system users.`,
+          `PostgreSQL connected: loaded ${backendTasks?.length || 0} tasks, ${backendAgents?.length || 0} technicians, and ${backendUsers?.length || 0} system users.`,
           'success'
         );
       } catch (err) {
-        console.warn('Backend server offline or initializing; using local state.', err);
+        console.warn('Backend server offline or initializing:', err);
       }
     };
 
     hydrateFromBackend();
+
+    // Background polling every 10 seconds to sync live GPS telemetry across dispatch and agents
+    const pollTimer = setInterval(async () => {
+      try {
+        const freshAgents = await fetchAgents();
+        if (isMounted && freshAgents && freshAgents.length > 0) {
+          setAgents(freshAgents);
+        }
+      } catch (err) {
+        // background poll failure is non-critical
+      }
+    }, 10000);
+
     return () => {
       isMounted = false;
+      clearInterval(pollTimer);
     };
   }, []);
 
@@ -317,42 +326,65 @@ export const App: React.FC = () => {
 
   // Simulate GPS coordinates movement
   const handleSimulateGpsMovement = (agentId: string) => {
-    const latDelta = (Math.random() - 0.5) * 0.005;
-    const lngDelta = (Math.random() - 0.5) * 0.005;
+    const targetAgent = agents.find((a) => a.id === agentId);
+    if (!targetAgent) return;
 
-    let updatedLat = 0;
-    let updatedLng = 0;
-
-    setAgents((prev) =>
-      prev.map((a) => {
-        if (a.id !== agentId) return a;
-        const newLat = a.currentLocation.lat + latDelta;
-        const newLng = a.currentLocation.lng + lngDelta;
-        updatedLat = parseFloat(newLat.toFixed(5));
-        updatedLng = parseFloat(newLng.toFixed(5));
-        return {
-          ...a,
-          currentLocation: {
-            ...a.currentLocation,
-            lat: updatedLat,
-            lng: updatedLng,
-          },
-          lastUpdated: 'Live GPS Ping',
-        };
-      })
-    );
-
-    addLog(
-      'GPS Beacon Transmitted',
-      `Agent updated coordinates via mobile Geolocation API.`,
-      'info'
-    );
-
-    // Sync with PostgreSQL backend
-    if (!isNaN(Number(agentId)) && updatedLat && updatedLng) {
-      updateAgentLocation(agentId, updatedLat, updatedLng).catch((err) =>
-        console.warn('Backend updateAgentLocation sync error:', err)
+    const applyCoordinates = (lat: number, lng: number, source: string) => {
+      setAgents((prev) =>
+        prev.map((a) =>
+          a.id === agentId
+            ? {
+                ...a,
+                currentLocation: {
+                  ...a.currentLocation,
+                  lat,
+                  lng,
+                  addressName: `GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+                },
+                lastUpdated: `Live ${source}`,
+              }
+            : a
+        )
       );
+
+      addLog(
+        'GPS Beacon Transmitted',
+        `Technician ${targetAgent.name} updated coordinates to [${lat}, ${lng}] (${source}).`,
+        'info'
+      );
+
+      // Sync with PostgreSQL backend immediately
+      if (!isNaN(Number(agentId))) {
+        updateAgentLocation(agentId, lat, lng).catch((err) =>
+          console.warn('Backend updateAgentLocation sync error:', err)
+        );
+      }
+    };
+
+    // Attempt real browser / device geolocation first
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const liveLat = parseFloat(pos.coords.latitude.toFixed(5));
+          const liveLng = parseFloat(pos.coords.longitude.toFixed(5));
+          applyCoordinates(liveLat, liveLng, 'Device GPS');
+        },
+        (err) => {
+          console.info('Device GPS unavailable or permission declined; using simulated GPS delta:', err.message);
+          const latDelta = (Math.random() - 0.5) * 0.005;
+          const lngDelta = (Math.random() - 0.5) * 0.005;
+          const updatedLat = parseFloat((targetAgent.currentLocation.lat + latDelta).toFixed(5));
+          const updatedLng = parseFloat((targetAgent.currentLocation.lng + lngDelta).toFixed(5));
+          applyCoordinates(updatedLat, updatedLng, 'Simulated Ping');
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    } else {
+      const latDelta = (Math.random() - 0.5) * 0.005;
+      const lngDelta = (Math.random() - 0.5) * 0.005;
+      const updatedLat = parseFloat((targetAgent.currentLocation.lat + latDelta).toFixed(5));
+      const updatedLng = parseFloat((targetAgent.currentLocation.lng + lngDelta).toFixed(5));
+      applyCoordinates(updatedLat, updatedLng, 'Simulated Ping');
     }
   };
 
@@ -474,6 +506,7 @@ export const App: React.FC = () => {
             onAddAgent={handleAddAgent}
             onToggleAgentAvailability={handleToggleAgentAvailability}
             onReassignTask={handleReassignTask}
+            onSimulateGpsMovement={handleSimulateGpsMovement}
           />
         )}
 

@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from 'react-leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { AgentProfile, Task } from '../types';
 import { formatDistance, calculateHaversineDistance } from '../utils/geo';
-import { Users, Wrench, Layers, MapPin, Battery, CheckCircle, Clock } from 'lucide-react';
+import { Users, Wrench, Layers, MapPin, Battery, CheckCircle, Clock, ExternalLink } from 'lucide-react';
 
 export type MapViewFilter = 'all' | 'agents' | 'tasks';
 
@@ -82,6 +82,25 @@ interface MapViewProps {
   onSelectAgent?: (agentId: string) => void;
 }
 
+function MapController({ center }: { center?: [number, number] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.invalidateSize();
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [map]);
+
+  useEffect(() => {
+    if (center && !isNaN(center[0]) && !isNaN(center[1])) {
+      map.setView(center, map.getZoom(), { animate: true });
+    }
+  }, [center, map]);
+  return null;
+}
+
 export const MapView: React.FC<MapViewProps> = ({
   agents,
   tasks,
@@ -92,8 +111,8 @@ export const MapView: React.FC<MapViewProps> = ({
 }) => {
   const [filterMode, setFilterMode] = useState<MapViewFilter>('all');
 
-  // Center map around Nairobi
-  const defaultCenter: [number, number] = [-1.2921, 36.8123];
+  // Center map around Nairobi Metro
+  const defaultCenter: [number, number] = [-1.2950, 36.8300];
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
 
@@ -143,13 +162,24 @@ export const MapView: React.FC<MapViewProps> = ({
 
       <MapContainer
         center={defaultCenter}
-        zoom={13}
+        zoom={12}
         scrollWheelZoom={true}
         className="w-full h-full"
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        {/* Dynamic map re-centering when technician or task is selected */}
+        <MapController
+          center={
+            selectedAgent
+              ? [selectedAgent.currentLocation.lat, selectedAgent.currentLocation.lng]
+              : selectedTask
+              ? [selectedTask.location.lat, selectedTask.location.lng]
+              : undefined
+          }
         />
 
         {/* Render Proximity Radius for Selected Task if task is visible */}
@@ -178,11 +208,26 @@ export const MapView: React.FC<MapViewProps> = ({
           />
         )}
 
+        {/* GPS Beacon circle for selected agent */}
+        {showAgents && selectedAgent && (
+          <Circle
+            center={[selectedAgent.currentLocation.lat, selectedAgent.currentLocation.lng]}
+            radius={600}
+            pathOptions={{
+              color: '#059669',
+              fillColor: '#059669',
+              fillOpacity: 0.12,
+              weight: 1.5,
+              dashArray: '4, 6',
+            }}
+          />
+        )}
+
         {/* Agent Markers */}
         {showAgents &&
           agents.map((agent) => (
             <Marker
-              key={agent.id}
+              key={`${agent.id}-${agent.currentLocation.lat}-${agent.currentLocation.lng}`}
               position={[agent.currentLocation.lat, agent.currentLocation.lng]}
               icon={createAgentIcon(agent.availability)}
               eventHandlers={{
@@ -207,9 +252,9 @@ export const MapView: React.FC<MapViewProps> = ({
                   </div>
                   <p className="text-xs text-slate-600 font-medium mt-1.5">{agent.title}</p>
                   <div className="mt-2 text-xs text-slate-500 space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{agent.currentLocation.addressName}</span>
+                    <div className="flex items-center gap-1.5 font-mono text-slate-700 font-medium">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>GPS: {agent.currentLocation.lat.toFixed(4)}, {agent.currentLocation.lng.toFixed(4)}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Battery className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -229,6 +274,18 @@ export const MapView: React.FC<MapViewProps> = ({
                       )}
                     </div>
                   )}
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <a
+                      href={`https://www.google.com/maps?q=${agent.currentLocation.lat},${agent.currentLocation.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold hover:underline"
+                      title="Open and cross-reference coordinates on Google Maps"
+                    >
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      <span>Verify on Google Maps</span>
+                    </a>
+                  </div>
                 </div>
               </Popup>
             </Marker>
@@ -272,6 +329,18 @@ export const MapView: React.FC<MapViewProps> = ({
                       <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>Deadline: {task.deadline.split(' ')[1]}</span>
                     </div>
+                  </div>
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <a
+                      href={`https://www.google.com/maps?q=${task.location.lat},${task.location.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold hover:underline"
+                      title="Open and cross-reference site on Google Maps"
+                    >
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      <span>Verify on Google Maps</span>
+                    </a>
                   </div>
                 </div>
               </Popup>
