@@ -1,4 +1,4 @@
-import { AgentProfile, Task, AllocationWeights, AuthUser, SystemUser } from '../types';
+import { AgentProfile, Task, AllocationWeights, AuthUser, SystemUser, SystemLog } from '../types';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -290,7 +290,7 @@ export async function fetchAgents(): Promise<AgentProfile[]> {
     currentLocation: {
       lat: a.current_lat,
       lng: a.current_lng,
-      addressName: 'Nairobi Area',
+      addressName: `GPS: ${a.current_lat.toFixed(4)}, ${a.current_lng.toFixed(4)}`,
     },
     activeTaskCount: a.active_task_count,
     completedTasksCount: a.completed_tasks_count,
@@ -382,4 +382,25 @@ export async function approveUserApi(userId: string | number): Promise<any> {
     body: JSON.stringify({}),
   });
 }
+
+// ----------------------------------------------------------------------
+// Performance & System Logs API
+// ----------------------------------------------------------------------
+export async function fetchLogs(): Promise<SystemLog[]> {
+  try {
+    const data = await request<any[]>('/logs/');
+    const list = Array.isArray(data) ? data : (data as any).results || [];
+    return list.map((l: any) => ({
+      id: String(l.id),
+      timestamp: l.recorded_at ? new Date(l.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Recent',
+      action: l.action || 'System Action',
+      details: l.details || '',
+      type: l.log_type || 'info',
+    }));
+  } catch (err) {
+    console.warn('Failed to fetch logs from backend:', err);
+    return [];
+  }
+}
+
 

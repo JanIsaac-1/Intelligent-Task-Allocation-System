@@ -100,7 +100,7 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ onAddAgent, onClos
       currentLocation: {
         lat,
         lng,
-        addressName,
+        addressName: `GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
       },
       activeTaskCount: 0,
       completedTasksCount: 0,
@@ -277,13 +277,27 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ onAddAgent, onClos
                 />
               </div>
               <div>
-                <label className="text-slate-700 font-semibold mb-1 block">Operational Base (Nairobi)</label>
-                <input
-                  type="text"
-                  value={addressName}
-                  onChange={(e) => setAddressName(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600"
-                />
+                <label className="text-slate-700 font-semibold mb-1 block">Live GPS Telemetry</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={lat}
+                    onChange={(e) => setLat(parseFloat(e.target.value) || -1.2921)}
+                    placeholder="Latitude"
+                    title="GPS Latitude"
+                    className="w-1/2 bg-white border border-slate-300 rounded-md p-2 text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-600"
+                  />
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={lng}
+                    onChange={(e) => setLng(parseFloat(e.target.value) || 36.8219)}
+                    placeholder="Longitude"
+                    title="GPS Longitude"
+                    className="w-1/2 bg-white border border-slate-300 rounded-md p-2 text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-600"
+                  />
+                </div>
               </div>
             </div>
 

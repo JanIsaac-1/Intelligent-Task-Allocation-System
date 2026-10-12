@@ -40,3 +40,11 @@
 .leaflet-popup-tip {
   background: #ffffff !important;
 }
+
+/* Fix Leaflet DivIcon default border and background */
+.custom-leaflet-marker,
+.custom-leaflet-task-marker {
+  background: transparent !important;
+  border: none !important;
+}
+

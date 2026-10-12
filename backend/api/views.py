@@ -243,6 +243,13 @@ class AgentProfileViewSet(viewsets.ModelViewSet):
             # Record breadcrumb in history
             LocationLog.objects.create(agent=agent, latitude=lat, longitude=lng)
 
+            # Record in System Audit Trail
+            PerformanceLog.objects.create(
+                action='GPS Telemetry Ping',
+                details=f"Technician {agent.user.full_name} updated GPS beacon to ({agent.current_lat:.4f}, {agent.current_lng:.4f})",
+                log_type='info'
+            )
+
             return Response({
                 'message': 'GPS location updated',
                 'lat': agent.current_lat,

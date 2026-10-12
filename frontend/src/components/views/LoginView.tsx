@@ -132,38 +132,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // Demo 1-Click Login
-  const handleQuickLogin = (demoEmail: string, demoRole: AuthUser['role'], name: string, profileId?: number) => {
-    const demoPassword = demoRole === 'administrator' ? 'admin123' : demoRole === 'agent' ? 'agent123' : 'user123';
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setLoading(true);
-    setErrorMessage('');
-
-    apiLogin(demoEmail, demoPassword)
-      .then((res) => {
-        onLoginSuccess(res.user, res.agentProfileId || profileId);
-      })
-      .catch((err) => {
-        console.warn('Backend quick login error, falling back:', err);
-        onLoginSuccess({
-          id: String(profileId || 1),
-          email: demoEmail,
-          fullName: name,
-          role: demoRole,
-          department: demoRole === 'administrator' ? 'Dispatch Headquarters' : demoRole === 'agent' ? 'Field Engineering' : 'Client Desk',
-          agentProfileId: profileId,
-        }, profileId);
-      })
-      .finally(() => setLoading(false));
-  };
-
   return (
     <div className="min-h-[88vh] flex items-center justify-center px-4 py-8">
-      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-12 gap-8 bg-white border border-slate-200 rounded-2xl shadow-sm p-6 lg:p-10">
-        
-        {/* Left Side: Form Area */}
-        <div className="md:col-span-7 flex flex-col justify-center">
+      <div className="max-w-lg w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8">
           
           {/* Header */}
           <div className="mb-5">
@@ -650,108 +621,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <CheckCircle2 className="w-3 h-3" /> API Ready
             </span>
           </div>
-        </div>
-
-        {/* Right Side: 1-Click Role Presets (For Testing / Project Defense) */}
-        <div className="md:col-span-5 bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
-              <UserCheck className="w-4 h-4 text-blue-600" />
-              1-Click Demo Profiles
-            </div>
-            <p className="text-[11px] text-slate-500 mb-4 leading-relaxed">
-              Use these pre-approved roles to test role-based views and administrator approval actions:
-            </p>
-
-            <div className="space-y-2.5">
-              {/* Administrator */}
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('jan.maina@strathmore.edu', 'administrator', 'Jan Isaac Mwaniki Maina')}
-                className="w-full p-3 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:shadow-xs transition text-left group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition">
-                        Administrator
-                      </div>
-                      <div className="text-[10px] text-slate-500">Jan Isaac Mwaniki (Super Admin)</div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                    Full Access
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-2">
-                  Map View • Allocation Engine • User Approvals • Audit Trail
-                </div>
-              </button>
-
-              {/* Field Agent */}
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('brian.omondi@geotask.ke', 'agent', 'Brian Omondi', 2)}
-                className="w-full p-3 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 hover:shadow-xs transition text-left group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                      <Smartphone className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-900 group-hover:text-emerald-600 transition">
-                        Field Technician
-                      </div>
-                      <div className="text-[10px] text-slate-500">Brian Omondi (Lead Fiber Splicer)</div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    Mobile Only
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-2">
-                  Assigned Jobs • GPS Beacon Updates • Task Execution
-                </div>
-              </button>
-
-              {/* Task Requester */}
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('itdesk@apexfinance.co.ke', 'requester', 'Apex Financial IT Desk')}
-                className="w-full p-3 rounded-lg bg-white border border-slate-200 hover:border-amber-400 hover:shadow-xs transition text-left group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center">
-                      <PlusCircle className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-900 group-hover:text-amber-600 transition">
-                        Task Requester
-                      </div>
-                      <div className="text-[10px] text-slate-500">Apex Financial IT Helpdesk</div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                    Orders Only
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-2">
-                  Submit Work Orders • Real-time Job Status Tracking
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div className="text-[10px] text-slate-400 text-center mt-4">
-            Authorized Strathmore University Final Year Project Sandbox
-          </div>
-        </div>
-
       </div>
     </div>
   );
