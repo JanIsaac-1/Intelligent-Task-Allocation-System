@@ -251,10 +251,17 @@ export const MapView: React.FC<MapViewProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 font-medium mt-1.5">{agent.title}</p>
-                  <div className="mt-2 text-xs text-slate-500 space-y-1">
-                    <div className="flex items-center gap-1.5 font-mono text-slate-700 font-medium">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>GPS: {agent.currentLocation.lat.toFixed(4)}, {agent.currentLocation.lng.toFixed(4)}</span>
+                  <div className="mt-2 text-xs text-slate-500 space-y-1.5">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-slate-800 font-semibold text-xs">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="truncate max-w-[210px]" title={agent.currentLocation.addressName}>
+                          {agent.currentLocation.addressName || 'Nairobi Metro'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono pl-5">
+                        {agent.currentLocation.lat.toFixed(4)}, {agent.currentLocation.lng.toFixed(4)}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Battery className="w-3.5 h-3.5 text-slate-400 shrink-0" />

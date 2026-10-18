@@ -33,6 +33,7 @@ import {
   toggleAgentAvailability,
   updateUserStatusApi,
 } from './services/api';
+import { reverseGeocodeLocation } from './utils/geo';
 
 export const App: React.FC = () => {
   // Authentication session state
@@ -97,6 +98,34 @@ export const App: React.FC = () => {
         if (backendLogs && backendLogs.length > 0) {
           setLogs(backendLogs);
         }
+
+        // Asynchronously resolve physical address names for technicians
+        if (backendAgents && backendAgents.length > 0) {
+          backendAgents.forEach(async (ag) => {
+            if (ag.currentLocation?.lat && ag.currentLocation?.lng) {
+              const realAddr = await reverseGeocodeLocation(
+                ag.currentLocation.lat,
+                ag.currentLocation.lng
+              );
+              if (isMounted) {
+                setAgents((prev) =>
+                  prev.map((a) =>
+                    a.id === ag.id
+                      ? {
+                          ...a,
+                          currentLocation: {
+                            ...a.currentLocation,
+                            addressName: realAddr,
+                          },
+                        }
+                      : a
+                  )
+                );
+              }
+            }
+          });
+        }
+
         addLog(
           'Database Synchronized',
           `PostgreSQL connected: loaded ${backendTasks?.length || 0} tasks, ${backendAgents?.length || 0} technicians, and ${backendUsers?.length || 0} system users.`,
@@ -329,7 +358,8 @@ export const App: React.FC = () => {
     const targetAgent = agents.find((a) => a.id === agentId);
     if (!targetAgent) return;
 
-    const applyCoordinates = (lat: number, lng: number, source: string) => {
+    const applyCoordinates = async (lat: number, lng: number, source: string) => {
+      // 1. Immediately apply coordinates for prompt responsiveness
       setAgents((prev) =>
         prev.map((a) =>
           a.id === agentId
@@ -339,7 +369,7 @@ export const App: React.FC = () => {
                   ...a.currentLocation,
                   lat,
                   lng,
-                  addressName: `GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+                  addressName: `Resolving site... (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
                 },
                 lastUpdated: `Live ${source}`,
               }
@@ -347,16 +377,42 @@ export const App: React.FC = () => {
         )
       );
 
-      addLog(
-        'GPS Beacon Transmitted',
-        `Technician ${targetAgent.name} updated coordinates to [${lat}, ${lng}] (${source}).`,
-        'info'
-      );
-
-      // Sync with PostgreSQL backend immediately
+      // 2. Sync with PostgreSQL backend immediately
       if (!isNaN(Number(agentId))) {
         updateAgentLocation(agentId, lat, lng).catch((err) =>
           console.warn('Backend updateAgentLocation sync error:', err)
+        );
+      }
+
+      // 3. Resolve human-readable address name from Nominatim
+      try {
+        const resolvedAddress = await reverseGeocodeLocation(lat, lng);
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === agentId
+              ? {
+                  ...a,
+                  currentLocation: {
+                    ...a.currentLocation,
+                    lat,
+                    lng,
+                    addressName: resolvedAddress,
+                  },
+                }
+              : a
+          )
+        );
+
+        addLog(
+          'GPS Beacon Transmitted',
+          `Technician ${targetAgent.name} located at ${resolvedAddress} (${lat}, ${lng}) [${source}].`,
+          'info'
+        );
+      } catch {
+        addLog(
+          'GPS Beacon Transmitted',
+          `Technician ${targetAgent.name} updated coordinates to [${lat}, ${lng}] (${source}).`,
+          'info'
         );
       }
     };

@@ -205,14 +205,19 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                 </button>
               </div>
 
-              <div className="text-xs text-slate-700 flex items-center justify-between font-mono bg-white p-2 rounded border border-slate-200">
-                <div className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span className="font-semibold text-slate-800">Telemetry:</span>
+              <div className="text-xs text-slate-700 bg-white p-2.5 rounded border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-800">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Current Site:</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {currentAgent.currentLocation.lat.toFixed(4)}, {currentAgent.currentLocation.lng.toFixed(4)}
+                  </span>
                 </div>
-                <span className="text-slate-600 font-medium">
-                  {currentAgent.currentLocation.lat.toFixed(4)}, {currentAgent.currentLocation.lng.toFixed(4)}
-                </span>
+                <div className="text-xs font-bold text-slate-900 pl-5">
+                  {currentAgent.currentLocation.addressName || 'Resolving location...'}
+                </div>
               </div>
             </div>
 

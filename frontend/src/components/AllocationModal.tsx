@@ -238,6 +238,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
               {rankedCandidates.map((candidate, index) => {
                 const isSelected = candidate.agentId === chosenAgentId;
                 const isTop = index === 0;
+                const matchedAgent = agents.find((a) => a.id === candidate.agentId);
 
                 return (
                   <div
@@ -271,7 +272,17 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500">{candidate.agentTitle}</p>
+                          <p className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                            <span>{candidate.agentTitle}</span>
+                            {matchedAgent?.currentLocation?.addressName && (
+                              <>
+                                <span className="text-slate-300">•</span>
+                                <span className="text-slate-600 font-medium truncate max-w-[190px]" title={matchedAgent.currentLocation.addressName}>
+                                  📍 {matchedAgent.currentLocation.addressName}
+                                </span>
+                              </>
+                            )}
+                          </p>
                         </div>
                       </div>
 

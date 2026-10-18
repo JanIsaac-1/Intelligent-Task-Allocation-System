@@ -375,9 +375,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
-                      <div className="flex items-center gap-1.5 font-mono text-slate-600">
+                      <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
                         <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span>GPS: {agent.currentLocation.lat.toFixed(4)}, {agent.currentLocation.lng.toFixed(4)}</span>
+                        <span className="truncate max-w-[170px]" title={agent.currentLocation.addressName}>
+                          {agent.currentLocation.addressName || `${agent.currentLocation.lat.toFixed(4)}, ${agent.currentLocation.lng.toFixed(4)}`}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-700 font-medium">
                         <span>Active: {agent.activeTaskCount}</span>

@@ -44,3 +44,41 @@ export function formatDistance(distanceKm: number): string {
   }
   return `${distanceKm.toFixed(1)} km`;
 }
+
+// In-memory cache for reverse geocoding to prevent excessive network calls
+const geocodeCache = new Map<string, string>();
+
+/**
+ * Resolves a human-readable street/estate name from geographic coordinates
+ * using OpenStreetMap Nominatim reverse geocoding with in-memory caching.
+ */
+export async function reverseGeocodeLocation(lat: number, lng: number): Promise<string> {
+  if (isNaN(lat) || isNaN(lng)) return 'Unknown Location';
+
+  const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey)!;
+  }
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data.display_name) {
+        const parts = data.display_name.split(',');
+        const concise = parts.slice(0, 3).join(',').trim();
+        const finalName = concise || data.display_name;
+        geocodeCache.set(cacheKey, finalName);
+        return finalName;
+      }
+    }
+  } catch {
+    // Network or rate-limit failure: gracefully fall back to coordinates
+  }
+
+  const fallback = `GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  geocodeCache.set(cacheKey, fallback);
+  return fallback;
+}
