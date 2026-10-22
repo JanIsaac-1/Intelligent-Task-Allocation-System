@@ -228,32 +228,57 @@ class AgentProfileViewSet(viewsets.ModelViewSet):
     queryset = AgentProfile.objects.all().order_by('-last_updated')
     serializer_class = AgentProfileSerializer
 
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        full_name = self.request.data.get('full_name')
+        phone = self.request.data.get('phone')
+        user_modified = False
+        if full_name:
+            instance.user.full_name = full_name.strip()
+            user_modified = True
+        if phone is not None:
+            instance.user.phone = phone.strip()
+            user_modified = True
+        if user_modified:
+            instance.user.save()
+
+        PerformanceLog.objects.create(
+            action='Technician Profile Updated',
+            details=f'Administrator updated profile for {instance.user.full_name} ({instance.title})',
+            log_type='info'
+        )
+
     @action(detail=True, methods=['post'])
     def update_location(self, request, pk=None):
         """Receives live GPS breadcrumbs from agent's mobile device."""
         agent = self.get_object()
         lat = request.data.get('lat')
         lng = request.data.get('lng')
+        address = request.data.get('address') or request.data.get('address_name')
 
         if lat is not None and lng is not None:
             agent.current_lat = float(lat)
             agent.current_lng = float(lng)
+            if address:
+                agent.current_address = str(address).strip()
             agent.save()
 
             # Record breadcrumb in history
             LocationLog.objects.create(agent=agent, latitude=lat, longitude=lng)
 
             # Record in System Audit Trail
+            addr_info = f" at {agent.current_address}" if agent.current_address else ""
             PerformanceLog.objects.create(
                 action='GPS Telemetry Ping',
-                details=f"Technician {agent.user.full_name} updated GPS beacon to ({agent.current_lat:.4f}, {agent.current_lng:.4f})",
+                details=f"Technician {agent.user.full_name} updated GPS beacon{addr_info} ({agent.current_lat:.4f}, {agent.current_lng:.4f})",
                 log_type='info'
             )
 
             return Response({
                 'message': 'GPS location updated',
                 'lat': agent.current_lat,
-                'lng': agent.current_lng
+                'lng': agent.current_lng,
+                'current_address': agent.current_address
             })
         return Response({'error': 'Coordinates required'}, status=status.HTTP_400_BAD_REQUEST)
 

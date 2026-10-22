@@ -3,6 +3,7 @@ import { AgentProfile, Task, AllocationWeights } from '../../types';
 import { MapView } from '../MapView';
 import { AllocationModal } from '../AllocationModal';
 import { AddAgentModal } from '../AddAgentModal';
+import { TechnicianProfileModal } from '../TechnicianProfileModal';
 import {
   Users,
   MapPin,
@@ -25,6 +26,7 @@ interface AdminDashboardProps {
   onWeightsChange: (weights: AllocationWeights) => void;
   onAssignTask: (taskId: string, agentId: string, score: number) => void;
   onAddAgent: (agent: AgentProfile) => void;
+  onUpdateAgent?: (updatedAgent: AgentProfile) => Promise<void> | void;
   onToggleAgentAvailability: (agentId: string) => void;
   onReassignTask: (taskId: string) => void;
   onSimulateGpsMovement?: (agentId: string) => void;
@@ -37,6 +39,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onWeightsChange,
   onAssignTask,
   onAddAgent,
+  onUpdateAgent,
   onToggleAgentAvailability,
   onReassignTask,
   onSimulateGpsMovement,
@@ -45,6 +48,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
   const [allocationModalTask, setAllocationModalTask] = useState<Task | null>(null);
   const [showAddAgentModal, setShowAddAgentModal] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<AgentProfile | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'tasks' | 'agents'>('tasks');
 
   useEffect(() => {
@@ -147,6 +151,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onSelectAgent={(id) => {
                 setSelectedAgentId(id);
                 setRightPanelTab('agents');
+              }}
+              onInspectAgent={(id) => {
+                setSelectedAgentId(id);
+                const target = agents.find((a) => a.id === id);
+                if (target) setEditingAgent(target);
               }}
             />
           </div>
@@ -347,13 +356,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </button>
                         )}
                         <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedAgentId(agent.id);
+                            setEditingAgent(agent);
+                          }}
+                          className="text-[10px] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded font-semibold transition"
+                        >
+                          Edit Profile
+                        </button>
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             onToggleAgentAvailability(agent.id);
                           }}
-                          className="text-[10px] text-blue-600 hover:underline font-semibold"
+                          className="text-[10px] text-slate-500 hover:text-slate-800 hover:underline font-medium"
                         >
-                          Change Status
+                          Status
                         </button>
                       </div>
                     </div>
@@ -374,18 +394,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
                     </div>
 
-                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
-                      <div className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
-                        <MapPin className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span className="truncate max-w-[170px]" title={agent.currentLocation.addressName}>
-                          {agent.currentLocation.addressName || `${agent.currentLocation.lat.toFixed(4)}, ${agent.currentLocation.lng.toFixed(4)}`}
+                    {/* Physical Location Badge (Full width, clear address name) */}
+                    <div className="mt-2.5 pt-2 border-t border-slate-200/80">
+                      <div className="flex items-start gap-1.5 bg-slate-50/90 border border-slate-200/70 p-2 rounded-md text-xs text-slate-800">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        <span className="font-semibold leading-snug break-words">
+                          {agent.currentLocation.addressName || 'Nairobi Metro'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-slate-700 font-medium">
-                        <span>Active: {agent.activeTaskCount}</span>
-                        <span>•</span>
-                        <span>Completed: {agent.completedTasksCount}</span>
-                      </div>
+                    </div>
+
+                    {/* Active & Completed Stats */}
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 font-medium px-0.5">
+                      <span className="flex items-center gap-1">
+                        Active Tasks: <strong className="text-blue-700">{agent.activeTaskCount}</strong>
+                      </span>
+                      <span className="text-slate-300">•</span>
+                      <span className="flex items-center gap-1">
+                        Completed: <strong className="text-emerald-700">{agent.completedTasksCount}</strong>
+                      </span>
                     </div>
                   </div>
                 );
@@ -418,6 +445,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             setShowAddAgentModal(false);
           }}
           onClose={() => setShowAddAgentModal(false)}
+        />
+      )}
+
+      {/* Technician Full Profile Inspector & Edit Modal */}
+      {editingAgent && (
+        <TechnicianProfileModal
+          agent={editingAgent}
+          onUpdateAgent={async (updated) => {
+            if (onUpdateAgent) {
+              await onUpdateAgent(updated);
+            }
+            setEditingAgent(updated);
+          }}
+          onClose={() => setEditingAgent(null)}
+          onPingGps={onSimulateGpsMovement}
         />
       )}
     </div>

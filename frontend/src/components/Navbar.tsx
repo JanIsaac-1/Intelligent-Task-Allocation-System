@@ -40,7 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-2">
               <span className="font-bold text-base tracking-tight text-slate-900">GeoTask</span>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                ICS Project
+                Field Operations
               </span>
             </div>
             <p className="text-[11px] text-slate-500 font-medium">

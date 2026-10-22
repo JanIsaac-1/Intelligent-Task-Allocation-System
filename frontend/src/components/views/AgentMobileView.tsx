@@ -7,7 +7,6 @@ import {
   Phone,
   Clock,
   Radio,
-  Battery,
   UserCheck,
   AlertCircle,
   ExternalLink,
@@ -87,7 +86,6 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
     );
   }
 
-  const batteryLevel = currentAgent.batteryLevel ?? 88;
 
   return (
     <div className="space-y-4">
@@ -205,34 +203,18 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                 </button>
               </div>
 
-              <div className="text-xs text-slate-700 bg-white p-2.5 rounded border border-slate-200 space-y-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-800">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>Current Site:</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    {currentAgent.currentLocation.lat.toFixed(4)}, {currentAgent.currentLocation.lng.toFixed(4)}
-                  </span>
-                </div>
-                <div className="text-xs font-bold text-slate-900 pl-5">
-                  {currentAgent.currentLocation.addressName || 'Resolving location...'}
-                </div>
+              <div className="text-xs bg-white p-2.5 rounded border border-slate-200 flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span className="font-semibold text-slate-800 leading-snug">
+                  {currentAgent.currentLocation.addressName || 'Nairobi Metro'}
+                </span>
               </div>
             </div>
 
             {/* Quick Metrics */}
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-2 gap-2 text-center">
               <div className="bg-slate-50 border border-slate-200 p-2 rounded-lg">
-                <div className="text-[10px] font-medium text-slate-500">Battery</div>
-                <div className="text-xs font-bold text-slate-800 flex items-center justify-center gap-1 mt-0.5">
-                  <Battery className={`w-3.5 h-3.5 ${batteryLevel < 25 ? 'text-red-500' : 'text-emerald-600'}`} />
-                  <span>{batteryLevel}%</span>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 p-2 rounded-lg">
-                <div className="text-[10px] font-medium text-slate-500">Active</div>
+                <div className="text-[10px] font-medium text-slate-500">Active Tasks</div>
                 <div className="text-xs font-bold text-blue-700 mt-0.5">
                   {assignedTasks.filter((t) => t.status === 'assigned' || t.status === 'in_progress').length}
                 </div>

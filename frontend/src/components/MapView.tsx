@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from
 import L from 'leaflet';
 import { AgentProfile, Task } from '../types';
 import { formatDistance, calculateHaversineDistance } from '../utils/geo';
-import { Users, Wrench, Layers, MapPin, Battery, CheckCircle, Clock, ExternalLink } from 'lucide-react';
+import { Users, Wrench, Layers, MapPin, CheckCircle, Clock, ExternalLink } from 'lucide-react';
 
 export type MapViewFilter = 'all' | 'agents' | 'tasks';
 
@@ -80,6 +80,7 @@ interface MapViewProps {
   selectedAgentId?: string;
   onSelectTask?: (taskId: string) => void;
   onSelectAgent?: (agentId: string) => void;
+  onInspectAgent?: (agentId: string) => void;
 }
 
 function MapController({ center }: { center?: [number, number] }) {
@@ -108,6 +109,7 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedAgentId,
   onSelectTask,
   onSelectAgent,
+  onInspectAgent,
 }) => {
   const [filterMode, setFilterMode] = useState<MapViewFilter>('all');
 
@@ -263,9 +265,9 @@ export const MapView: React.FC<MapViewProps> = ({
                         {agent.currentLocation.lat.toFixed(4)}, {agent.currentLocation.lng.toFixed(4)}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Battery className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>Battery: {agent.batteryLevel}% • Active Tasks: {agent.activeTaskCount}</span>
+                    <div className="flex items-center gap-1.5 text-slate-600">
+                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>Active Tasks: <strong className="text-slate-800">{agent.activeTaskCount}</strong></span>
                     </div>
                   </div>
                   {selectedTask && (
@@ -281,7 +283,7 @@ export const MapView: React.FC<MapViewProps> = ({
                       )}
                     </div>
                   )}
-                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                     <a
                       href={`https://www.google.com/maps?q=${agent.currentLocation.lat},${agent.currentLocation.lng}`}
                       target="_blank"
@@ -290,8 +292,17 @@ export const MapView: React.FC<MapViewProps> = ({
                       title="Open and cross-reference coordinates on Google Maps"
                     >
                       <ExternalLink className="w-2.5 h-2.5" />
-                      <span>Verify on Google Maps</span>
+                      <span>Google Maps</span>
                     </a>
+                    {onInspectAgent && (
+                      <button
+                        type="button"
+                        onClick={() => onInspectAgent(agent.id)}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 text-white font-semibold transition shadow-2xs"
+                      >
+                        Edit Profile
+                      </button>
+                    )}
                   </div>
                 </div>
               </Popup>

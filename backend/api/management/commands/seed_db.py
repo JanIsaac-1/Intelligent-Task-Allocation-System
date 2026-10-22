@@ -10,7 +10,7 @@ class Command(BaseCommand):
 
         # 1. Create Administrators
         admin_user, _ = User.objects.get_or_create(
-            email="jan.maina@strathmore.edu",
+            email="jan.maina@geotask.com",
             defaults={
                 'username': 'jan_maina',
                 'full_name': 'Jan Isaac Mwaniki Maina',
@@ -26,7 +26,7 @@ class Command(BaseCommand):
         admin_user.save()
 
         supervisor_user, _ = User.objects.get_or_create(
-            email="dowuor@strathmore.edu",
+            email="dowuor@geotask.com",
             defaults={
                 'username': 'dr_owuor',
                 'full_name': 'Dr. Dickson Owuor',
@@ -100,6 +100,7 @@ class Command(BaseCommand):
                 'bio': 'Experienced fiber specialist handling high-count backbone trunk cuts, aerial drop lines, and optical distribution cabinet troubleshooting across Nairobi.',
                 'current_lat': -1.2982,
                 'current_lng': 36.7891, # Kilimani
+                'current_address': 'Argwings Kodhek Rd, Kilimani, Nairobi',
                 'battery_level': 94,
                 'availability': 'available'
             },
@@ -116,6 +117,7 @@ class Command(BaseCommand):
                 'bio': 'Commercial high-rise plumbing specialist expert in multi-stage booster pumps, apartment vertical riser bursts, and borehole pressure manifolds.',
                 'current_lat': -1.2833,
                 'current_lng': 36.8167, # CBD
+                'current_address': 'Kenyatta Avenue, CBD, Nairobi',
                 'battery_level': 76,
                 'availability': 'available'
             },
@@ -132,6 +134,7 @@ class Command(BaseCommand):
                 'bio': 'Deep cleaning lead equipped with rotary floor scrubbers, tile acid strippers, and upholstery hot-water extractors.',
                 'current_lat': -1.3005,
                 'current_lng': 36.8225, # Madaraka
+                'current_address': 'Ole Sangale Rd, Madaraka, Nairobi',
                 'battery_level': 91,
                 'availability': 'available'
             },
@@ -148,6 +151,7 @@ class Command(BaseCommand):
                 'bio': 'Specialized in commercial and residential hybrid solar setups (Deye, Victron, Growatt), Lithium battery BMS troubleshooting, and solar water heaters.',
                 'current_lat': -1.3211,
                 'current_lng': 36.8521, # Industrial Area
+                'current_address': 'Enterprise Rd, Industrial Area, Nairobi',
                 'battery_level': 82,
                 'availability': 'available'
             },
@@ -164,6 +168,7 @@ class Command(BaseCommand):
                 'bio': 'Mobile auto-electrician providing emergency roadside battery jumpstarts, diagnostic scanning, and mobile breakdown recovery across Nairobi highways.',
                 'current_lat': -1.3325,
                 'current_lng': 36.8912, # Mombasa Road / Syokimau
+                'current_address': 'Mombasa Road, Syokimau, Nairobi',
                 'battery_level': 68,
                 'availability': 'available'
             }
@@ -196,6 +201,7 @@ class Command(BaseCommand):
                     'bio': a_data['bio'],
                     'current_lat': a_data['current_lat'],
                     'current_lng': a_data['current_lng'],
+                    'current_address': a_data.get('current_address', 'Nairobi Metro'),
                     'battery_level': a_data['battery_level'],
                     'availability': a_data['availability']
                 }
@@ -249,7 +255,7 @@ class Command(BaseCommand):
                 'status': 'pending',
                 'target_lat': -1.3060,
                 'target_lng': 36.8142,
-                'address_name': 'Madaraka Estate (Near Strathmore University)',
+                'address_name': 'Madaraka Estate (Ole Sangale Road)',
                 'requester': requester2
             }
         ]

@@ -104,7 +104,7 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
   const [gpsStatusMessage, setGpsStatusMessage] = useState<string | null>(null);
 
   // Requester Info
-  const [requesterName, setRequesterName] = useState('Facilities Directorate - Strathmore');
+  const [requesterName, setRequesterName] = useState('Facilities Operations Directorate');
   const [requesterPhone, setRequesterPhone] = useState('+254 722 123 456');
   const [submittedTask, setSubmittedTask] = useState<Task | null>(null);
 
@@ -435,7 +435,7 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                         handleAddressSearch(e);
                       }
                     }}
-                    placeholder="Search landmark, estate, or road (e.g. Strathmore, Westlands, Yaya Centre, Roysambu...)"
+                    placeholder="Search landmark, estate, or road (e.g. Westlands, Upper Hill, Yaya Centre, Roysambu...)"
                     className="w-full bg-white border border-slate-300 rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600"
                   />
                 </div>
@@ -493,7 +493,7 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                     required
                     value={addressName}
                     onChange={(e) => setAddressName(e.target.value)}
-                    placeholder="e.g. Strathmore Student Center, Ole Sangale Rd"
+                    placeholder="e.g. Hospital Road, Upper Hill or Waiyaki Way, Westlands"
                     className="w-full bg-white border border-slate-300 rounded-md p-1.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600"
                   />
                 </div>

@@ -78,7 +78,7 @@ export async function reverseGeocodeLocation(lat: number, lng: number): Promise<
     // Network or rate-limit failure: gracefully fall back to coordinates
   }
 
-  const fallback = `GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  const fallback = 'Nairobi Metro';
   geocodeCache.set(cacheKey, fallback);
   return fallback;
 }

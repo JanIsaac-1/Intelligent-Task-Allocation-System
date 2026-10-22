@@ -31,6 +31,7 @@ import {
   updateTaskStatus,
   updateAgentLocation,
   toggleAgentAvailability,
+  updateAgentProfile,
   updateUserStatusApi,
 } from './services/api';
 import { reverseGeocodeLocation } from './utils/geo';
@@ -328,6 +329,29 @@ export const App: React.FC = () => {
     );
   };
 
+  // Update existing technician profile
+  const handleUpdateAgent = async (updatedAgent: AgentProfile) => {
+    // 1. Optimistic UI update
+    setAgents((prev) =>
+      prev.map((a) => (a.id === updatedAgent.id ? updatedAgent : a))
+    );
+
+    addLog(
+      'Technician Profile Modified',
+      `Admin updated profile for ${updatedAgent.name} (${updatedAgent.title}) with ${updatedAgent.skills.length} skills and ${updatedAgent.certifications.length} licenses.`,
+      'info'
+    );
+
+    // 2. Sync with PostgreSQL backend
+    if (!isNaN(Number(updatedAgent.id))) {
+      try {
+        await updateAgentProfile(updatedAgent.id, updatedAgent);
+      } catch (err) {
+        console.warn('Backend updateAgentProfile sync error:', err);
+      }
+    }
+  };
+
   // Toggle availability
   const handleToggleAgentAvailability = (agentId: string) => {
     let nextState: AgentProfile['availability'] = 'available';
@@ -369,7 +393,6 @@ export const App: React.FC = () => {
                   ...a.currentLocation,
                   lat,
                   lng,
-                  addressName: `Resolving site... (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
                 },
                 lastUpdated: `Live ${source}`,
               }
@@ -403,9 +426,16 @@ export const App: React.FC = () => {
           )
         );
 
+        // Persist newly resolved physical address to PostgreSQL backend
+        if (!isNaN(Number(agentId))) {
+          updateAgentLocation(agentId, lat, lng, resolvedAddress).catch((err) =>
+            console.warn('Backend updateAgentLocation sync error:', err)
+          );
+        }
+
         addLog(
           'GPS Beacon Transmitted',
-          `Technician ${targetAgent.name} located at ${resolvedAddress} (${lat}, ${lng}) [${source}].`,
+          `Technician ${targetAgent.name} located at ${resolvedAddress} [${source}].`,
           'info'
         );
       } catch {
@@ -560,6 +590,7 @@ export const App: React.FC = () => {
             onWeightsChange={setWeights}
             onAssignTask={handleAssignTask}
             onAddAgent={handleAddAgent}
+            onUpdateAgent={handleUpdateAgent}
             onToggleAgentAvailability={handleToggleAgentAvailability}
             onReassignTask={handleReassignTask}
             onSimulateGpsMovement={handleSimulateGpsMovement}
@@ -607,7 +638,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="border-t border-slate-200 bg-white py-3.5 px-6 text-center text-xs text-slate-500 font-medium">
-        Strathmore University • School of Computing & Engineering Sciences • Field Workforce Task Allocation System
+        GeoTask Intelligent Operations Platform • Field Workforce & Location-Based Task Allocation System
       </footer>
     </div>
   );
