@@ -56,6 +56,7 @@ class AgentProfile(models.Model):
     # Live GPS Telemetry
     current_lat = models.FloatField(default=-1.2921)
     current_lng = models.FloatField(default=36.8219)
+    current_address = models.CharField(max_length=255, default="Nairobi Metro", blank=True)
     battery_level = models.IntegerField(default=100)
     
     # Workload Balancing Attributes

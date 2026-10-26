@@ -1,6 +1,6 @@
 """
 Django settings for geotask_backend project.
-Strathmore University ICS Final Year Project
+GeoTask Field Workforce & Task Allocation System
 Author: Jan Isaac Mwaniki Maina
 """
 

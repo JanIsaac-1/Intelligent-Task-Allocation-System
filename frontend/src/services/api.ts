@@ -290,7 +290,7 @@ export async function fetchAgents(): Promise<AgentProfile[]> {
     currentLocation: {
       lat: a.current_lat,
       lng: a.current_lng,
-      addressName: `GPS: ${a.current_lat.toFixed(4)}, ${a.current_lng.toFixed(4)}`,
+      addressName: a.current_address || 'Nairobi Metro',
     },
     activeTaskCount: a.active_task_count,
     completedTasksCount: a.completed_tasks_count,
@@ -307,11 +307,12 @@ export async function fetchAgents(): Promise<AgentProfile[]> {
 export async function updateAgentLocation(
   agentId: string | number,
   lat: number,
-  lng: number
+  lng: number,
+  addressName?: string
 ): Promise<any> {
   return request(`/agents/${agentId}/update_location/`, {
     method: 'POST',
-    body: JSON.stringify({ lat, lng }),
+    body: JSON.stringify({ lat, lng, address_name: addressName }),
   });
 }
 
@@ -322,6 +323,27 @@ export async function toggleAgentAvailability(
   return request(`/agents/${agentId}/toggle_availability/`, {
     method: 'PATCH',
     body: JSON.stringify({ availability }),
+  });
+}
+
+export async function updateAgentProfile(
+  agentId: string | number,
+  data: Partial<AgentProfile>
+): Promise<any> {
+  const payload: any = {
+    title: data.title,
+    domain: data.domain,
+    experience_years: data.experienceYears,
+    skills: data.skills,
+    certifications: data.certifications,
+    bio: data.bio,
+    availability: data.availability,
+    full_name: data.name,
+    phone: data.phone,
+  };
+  return request('/agents/' + agentId + '/', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
   });
 }
 

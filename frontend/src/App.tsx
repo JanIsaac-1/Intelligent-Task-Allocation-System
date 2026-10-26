@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_ALGORITHM_POLICY,
   PresetConfig,
-} from './data/mockData';
+} from './data/config';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { AdminDashboard } from './components/views/AdminDashboard';
 import { AgentMobileView } from './components/views/AgentMobileView';
@@ -31,8 +31,10 @@ import {
   updateTaskStatus,
   updateAgentLocation,
   toggleAgentAvailability,
+  updateAgentProfile,
   updateUserStatusApi,
 } from './services/api';
+import { reverseGeocodeLocation } from './utils/geo';
 
 export const App: React.FC = () => {
   // Authentication session state
@@ -97,6 +99,34 @@ export const App: React.FC = () => {
         if (backendLogs && backendLogs.length > 0) {
           setLogs(backendLogs);
         }
+
+        // Asynchronously resolve physical address names for technicians
+        if (backendAgents && backendAgents.length > 0) {
+          backendAgents.forEach(async (ag) => {
+            if (ag.currentLocation?.lat && ag.currentLocation?.lng) {
+              const realAddr = await reverseGeocodeLocation(
+                ag.currentLocation.lat,
+                ag.currentLocation.lng
+              );
+              if (isMounted) {
+                setAgents((prev) =>
+                  prev.map((a) =>
+                    a.id === ag.id
+                      ? {
+                          ...a,
+                          currentLocation: {
+                            ...a.currentLocation,
+                            addressName: realAddr,
+                          },
+                        }
+                      : a
+                  )
+                );
+              }
+            }
+          });
+        }
+
         addLog(
           'Database Synchronized',
           `PostgreSQL connected: loaded ${backendTasks?.length || 0} tasks, ${backendAgents?.length || 0} technicians, and ${backendUsers?.length || 0} system users.`,
@@ -299,6 +329,29 @@ export const App: React.FC = () => {
     );
   };
 
+  // Update existing technician profile
+  const handleUpdateAgent = async (updatedAgent: AgentProfile) => {
+    // 1. Optimistic UI update
+    setAgents((prev) =>
+      prev.map((a) => (a.id === updatedAgent.id ? updatedAgent : a))
+    );
+
+    addLog(
+      'Technician Profile Modified',
+      `Admin updated profile for ${updatedAgent.name} (${updatedAgent.title}) with ${updatedAgent.skills.length} skills and ${updatedAgent.certifications.length} licenses.`,
+      'info'
+    );
+
+    // 2. Sync with PostgreSQL backend
+    if (!isNaN(Number(updatedAgent.id))) {
+      try {
+        await updateAgentProfile(updatedAgent.id, updatedAgent);
+      } catch (err) {
+        console.warn('Backend updateAgentProfile sync error:', err);
+      }
+    }
+  };
+
   // Toggle availability
   const handleToggleAgentAvailability = (agentId: string) => {
     let nextState: AgentProfile['availability'] = 'available';
@@ -329,7 +382,8 @@ export const App: React.FC = () => {
     const targetAgent = agents.find((a) => a.id === agentId);
     if (!targetAgent) return;
 
-    const applyCoordinates = (lat: number, lng: number, source: string) => {
+    const applyCoordinates = async (lat: number, lng: number, source: string) => {
+      // 1. Immediately apply coordinates for prompt responsiveness
       setAgents((prev) =>
         prev.map((a) =>
           a.id === agentId
@@ -339,7 +393,6 @@ export const App: React.FC = () => {
                   ...a.currentLocation,
                   lat,
                   lng,
-                  addressName: `GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
                 },
                 lastUpdated: `Live ${source}`,
               }
@@ -347,16 +400,49 @@ export const App: React.FC = () => {
         )
       );
 
-      addLog(
-        'GPS Beacon Transmitted',
-        `Technician ${targetAgent.name} updated coordinates to [${lat}, ${lng}] (${source}).`,
-        'info'
-      );
-
-      // Sync with PostgreSQL backend immediately
+      // 2. Sync with PostgreSQL backend immediately
       if (!isNaN(Number(agentId))) {
         updateAgentLocation(agentId, lat, lng).catch((err) =>
           console.warn('Backend updateAgentLocation sync error:', err)
+        );
+      }
+
+      // 3. Resolve human-readable address name from Nominatim
+      try {
+        const resolvedAddress = await reverseGeocodeLocation(lat, lng);
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === agentId
+              ? {
+                  ...a,
+                  currentLocation: {
+                    ...a.currentLocation,
+                    lat,
+                    lng,
+                    addressName: resolvedAddress,
+                  },
+                }
+              : a
+          )
+        );
+
+        // Persist newly resolved physical address to PostgreSQL backend
+        if (!isNaN(Number(agentId))) {
+          updateAgentLocation(agentId, lat, lng, resolvedAddress).catch((err) =>
+            console.warn('Backend updateAgentLocation sync error:', err)
+          );
+        }
+
+        addLog(
+          'GPS Beacon Transmitted',
+          `Technician ${targetAgent.name} located at ${resolvedAddress} [${source}].`,
+          'info'
+        );
+      } catch {
+        addLog(
+          'GPS Beacon Transmitted',
+          `Technician ${targetAgent.name} updated coordinates to [${lat}, ${lng}] (${source}).`,
+          'info'
         );
       }
     };
@@ -504,6 +590,7 @@ export const App: React.FC = () => {
             onWeightsChange={setWeights}
             onAssignTask={handleAssignTask}
             onAddAgent={handleAddAgent}
+            onUpdateAgent={handleUpdateAgent}
             onToggleAgentAvailability={handleToggleAgentAvailability}
             onReassignTask={handleReassignTask}
             onSimulateGpsMovement={handleSimulateGpsMovement}
@@ -551,7 +638,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="border-t border-slate-200 bg-white py-3.5 px-6 text-center text-xs text-slate-500 font-medium">
-        Strathmore University • School of Computing & Engineering Sciences • Field Workforce Task Allocation System
+        GeoTask Intelligent Operations Platform • Field Workforce & Location-Based Task Allocation System
       </footer>
     </div>
   );

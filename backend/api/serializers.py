@@ -19,7 +19,7 @@ class AgentProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'full_name', 'email', 'phone', 'title', 'domain',
             'experience_years', 'skills', 'certifications', 'bio', 'availability',
-            'current_lat', 'current_lng', 'battery_level', 'active_task_count',
+            'current_lat', 'current_lng', 'current_address', 'battery_level', 'active_task_count',
             'completed_tasks_count', 'last_updated'
         ]
         read_only_fields = ['id', 'active_task_count', 'completed_tasks_count', 'last_updated']

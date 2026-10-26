@@ -146,7 +146,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               {activeMode === 'signin' ? 'Sign In to GeoTask' : 'Create an Account'}
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Strathmore University • Intelligent Location-Based Task Allocation System
+              GeoTask Enterprise Platform • Intelligent Location-Based Task Allocation System
             </p>
           </div>
 
@@ -261,7 +261,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="e.g. jan.maina@strathmore.edu"
+                    placeholder="e.g. jan.maina@geotask.com"
                     className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50/50"
                     required
                   />
@@ -419,7 +419,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                       type="email"
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="e.g. jan.maina@strathmore.edu"
+                      placeholder="e.g. jan.maina@geotask.com"
                       className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-slate-50/50"
                       required
                     />
@@ -552,7 +552,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                       type="text"
                       value={regDepartment}
                       onChange={(e) => setRegDepartment(e.target.value)}
-                      placeholder="e.g. Strathmore Estates Directorate or Safaricom Facilities"
+                      placeholder="e.g. Enterprise Operations Directorate or Field Facilities"
                       className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-slate-50/50"
                       required
                     />
