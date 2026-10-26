@@ -1,6 +1,7 @@
+import { getAgentDutyStatus } from '../utils/duty';
 import React from 'react';
 import { ShieldCheck, Smartphone, PlusCircle, BarChart3, MapPin, Users, Settings, LogOut, Wrench } from 'lucide-react';
-import { AgentProfile, Task, AuthUser } from '../types';
+import { AgentProfile, Task, AuthUser, SystemUser } from '../types';
 
 export type ActiveTab = 'admin' | 'agent' | 'requester' | 'analytics' | 'admin-portal';
 
@@ -9,6 +10,7 @@ interface NavbarProps {
   onTabChange: (tab: ActiveTab) => void;
   agents: AgentProfile[];
   tasks: Task[];
+  systemUsers?: SystemUser[];
   currentUser: AuthUser | null;
   onLogout: () => void;
 }
@@ -18,11 +20,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   agents,
   tasks,
+  systemUsers,
   currentUser,
   onLogout,
 }) => {
   const pendingTasksCount = tasks.filter((t) => t.status === 'pending').length;
-  const availableAgentsCount = agents.filter((a) => a.availability === 'available').length;
+  const onDutyCount = agents.filter((a) => getAgentDutyStatus(a).isDutyActive).length;
+  const offDutyCount = agents.filter((a) => !getAgentDutyStatus(a).isDutyActive).length;
+  const availableAgentsCount = onDutyCount;
+  const pendingApprovalsCount = systemUsers ? systemUsers.filter((u) => u.status === 'pending').length : 0;
 
   const isAdmin = !currentUser || currentUser.role === 'administrator';
   const isAgent = currentUser?.role === 'agent';
@@ -113,6 +119,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Settings className="w-3.5 h-3.5 text-blue-600" />
               <span>Admin Portal</span>
+              {pendingApprovalsCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-500 text-white font-bold text-[10px]">
+                  {pendingApprovalsCount}
+                </span>
+              )}
             </button>
           )}
 
@@ -139,8 +150,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center gap-1.5 text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md font-medium">
                 <Users className="w-3.5 h-3.5 text-slate-500" />
                 <span>
-                  <strong>{availableAgentsCount}</strong> / {agents.length} Online
+                  <strong>{onDutyCount}</strong> / {agents.length} On Duty
                 </span>
+                {offDutyCount > 0 && (
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    ({offDutyCount} off-shift)
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md font-medium">

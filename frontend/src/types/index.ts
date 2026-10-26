@@ -19,7 +19,10 @@ export interface SystemUser {
   email: string;
   phone: string;
   role: Role;
-  status: 'active' | 'suspended' | 'pending';
+  status: 'active' | 'suspended' | 'pending' | 'locked' | 'rejected';
+  domain?: string;
+  skills?: string[];
+  experienceYears?: number;
   department: string;
   createdAt: string;
   lastLogin: string;
@@ -50,6 +53,10 @@ export interface AgentProfile {
   avatarUrl: string;
   batteryLevel?: number;
   lastUpdated: string;
+  shiftName?: string;
+  shiftStart?: string;
+  shiftEnd?: string;
+  isOnCall?: boolean;
 }
 
 export interface Task {

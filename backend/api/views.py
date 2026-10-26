@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.contrib.auth import authenticate, login, logout
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.conf import settings
 
 from .models import User, AgentProfile, Task, Assignment, LocationLog, PerformanceLog
 from .serializers import (
@@ -37,9 +38,9 @@ def api_login(request):
             'error': 'Account registration is pending administrator approval. Please wait for an administrator to review and activate your account.'
         }, status=status.HTTP_403_FORBIDDEN)
 
-    if user.status == 'suspended':
+    if user.status in ['suspended', 'locked', 'rejected']:
         return Response({
-            'error': 'Account has been suspended. Please contact dispatch operations administration.'
+            'error': f'Account access unavailable (Account status: {user.status.upper()}). Please contact administration.'
         }, status=status.HTTP_403_FORBIDDEN)
 
     # If password is provided, check password (or allow quick-login for demo users if testing)
@@ -181,7 +182,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def toggle_status(self, request, pk=None):
         user = self.get_object()
         new_status = request.data.get('status')
-        if new_status in ['active', 'suspended', 'pending']:
+        if new_status in ['active', 'suspended', 'pending', 'locked', 'rejected']:
             user.status = new_status
             user.save()
 
@@ -217,6 +218,83 @@ class UserViewSet(viewsets.ModelViewSet):
             action='User Registration Approved',
             details=f"Administrator approved registration for {user.full_name} ({user.email})",
             log_type='success'
+        )
+        return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=['post'])
+    def deny(self, request, pk=None):
+        """Rejects or deletes an unapproved pending registration."""
+        user = self.get_object()
+        reason = request.data.get('reason', 'Application rejected by administrator')
+        delete_account = request.data.get('delete', False)
+        user_email = user.email
+        user_name = user.full_name
+        if delete_account:
+            user.delete()
+            PerformanceLog.objects.create(
+                action='Registration Denied & Purged',
+                details=f"Administrator rejected and removed registration for {user_email}. Reason: {reason}",
+                log_type='warning'
+            )
+            return Response({'message': 'Registration request deleted successfully', 'deleted': True, 'id': pk})
+        else:
+            user.status = 'rejected'
+            user.save()
+            if hasattr(user, 'agent_profile'):
+                user.agent_profile.availability = 'offline'
+                user.agent_profile.save()
+            PerformanceLog.objects.create(
+                action='Registration Denied',
+                details=f"Administrator rejected registration for {user_name} ({user_email}). Reason: {reason}",
+                log_type='warning'
+            )
+            return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=['post'])
+    def reset_password(self, request, pk=None):
+        """Resets a user's password."""
+        user = self.get_object()
+        new_password = request.data.get('new_password', '').strip()
+        if not new_password or len(new_password) < 6:
+            return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        if request.data.get('unlock', False) and user.status in ['locked', 'suspended']:
+            user.status = 'active'
+            if hasattr(user, 'agent_profile'):
+                user.agent_profile.availability = 'available'
+                user.agent_profile.save()
+        user.save()
+        PerformanceLog.objects.create(
+            action='Administrative Password Reset',
+            details=f"Administrator reset password for user {user.full_name} ({user.email})",
+            log_type='info'
+        )
+        return Response({'message': f'Password for {user.email} reset successfully', 'status': user.status})
+
+    @action(detail=True, methods=['post', 'patch'])
+    def toggle_lockout(self, request, pk=None):
+        """Locks or unlocks an account immediately."""
+        user = self.get_object()
+        lock = request.data.get('lock', True)
+        if lock:
+            user.status = 'locked'
+            if hasattr(user, 'agent_profile'):
+                user.agent_profile.availability = 'offline'
+                user.agent_profile.save()
+            msg = f"Account for {user.full_name} ({user.email}) locked out by administrator."
+            log_type = 'warning'
+        else:
+            user.status = 'active'
+            if hasattr(user, 'agent_profile'):
+                user.agent_profile.availability = 'available'
+                user.agent_profile.save()
+            msg = f"Account for {user.full_name} ({user.email}) unlocked and restored to active."
+            log_type = 'success'
+        user.save()
+        PerformanceLog.objects.create(
+            action='Account Lockout Updated',
+            details=msg,
+            log_type=log_type
         )
         return Response(UserSerializer(user).data)
 
@@ -292,6 +370,32 @@ class AgentProfileViewSet(viewsets.ModelViewSet):
             agent.save()
             return Response(AgentProfileSerializer(agent).data)
         return Response({'error': 'Invalid availability state'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['patch', 'post'])
+    def update_shift(self, request, pk=None):
+        """Updates work shift schedule and on-call status for a technician."""
+        agent = self.get_object()
+        shift_name = request.data.get('shift_name')
+        shift_start = request.data.get('shift_start')
+        shift_end = request.data.get('shift_end')
+        is_on_call = request.data.get('is_on_call')
+
+        if shift_name:
+            agent.shift_name = shift_name.strip()
+        if shift_start:
+            agent.shift_start = shift_start.strip()
+        if shift_end:
+            agent.shift_end = shift_end.strip()
+        if is_on_call is not None:
+            agent.is_on_call = bool(is_on_call)
+        agent.save()
+
+        PerformanceLog.objects.create(
+            action='Work Shift Updated',
+            details=f"Updated shift for {agent.user.full_name}: {agent.shift_name} ({agent.shift_start} - {agent.shift_end})",
+            log_type='info'
+        )
+        return Response(AgentProfileSerializer(agent).data)
 
 
 # ==============================================================================
@@ -494,3 +598,52 @@ def parse_cv_pdf(request):
 class PerformanceLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = PerformanceLog.objects.all().order_by('-recorded_at')[:50]
     serializer_class = PerformanceLogSerializer
+
+
+# ==============================================================================
+# SYSTEM SECURITY & MASTER PASSCODE API
+# ==============================================================================
+@api_view(['GET', 'POST'])
+def system_security_settings(request):
+    """Retrieves or updates system security settings including Master Registration Key."""
+    import os
+    if request.method == 'GET':
+        current_key = getattr(settings, 'ADMIN_REGISTRATION_KEY', 'geotask2026')
+        return Response({
+            'master_key': current_key,
+            'allow_admin_registration': getattr(settings, 'ALLOW_ADMIN_REGISTRATION', True),
+            'require_approval_all': getattr(settings, 'REQUIRE_APPROVAL_ALL', False),
+        })
+    elif request.method == 'POST':
+        new_key = request.data.get('master_key', '').strip()
+        if not new_key or len(new_key) < 6:
+            return Response({'error': 'Master passcode must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+
+        settings.ADMIN_REGISTRATION_KEY = new_key
+
+        env_path = os.path.join(settings.BASE_DIR, '.env')
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                updated = False
+                new_lines = []
+                for line in lines:
+                    if line.startswith('ADMIN_REGISTRATION_KEY='):
+                        new_lines.append(f"ADMIN_REGISTRATION_KEY={new_key}\n")
+                        updated = True
+                    else:
+                        new_lines.append(line)
+                if not updated:
+                    new_lines.append(f"ADMIN_REGISTRATION_KEY={new_key}\n")
+                with open(env_path, 'w', encoding='utf-8') as f:
+                    f.writelines(new_lines)
+            except Exception:
+                pass
+
+        PerformanceLog.objects.create(
+            action='Master Passcode Updated',
+            details='Administrator updated system master authorization key.',
+            log_type='warning'
+        )
+        return Response({'message': 'Master passcode updated successfully', 'master_key': new_key})

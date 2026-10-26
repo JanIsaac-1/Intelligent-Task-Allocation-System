@@ -1,3 +1,4 @@
+import { getAgentDutyStatus } from '../utils/duty';
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -8,9 +9,9 @@ import { Users, Wrench, Layers, MapPin, CheckCircle, Clock, ExternalLink } from 
 export type MapViewFilter = 'all' | 'agents' | 'tasks';
 
 // Professional Leaflet DivIcons
-const createAgentIcon = (status: 'available' | 'busy' | 'offline') => {
+const createAgentIcon = (status: 'available' | 'busy' | 'offline' | 'on_duty' | 'on_call' | 'off_duty') => {
   const color =
-    status === 'available' ? '#059669' : status === 'busy' ? '#d97706' : '#64748b';
+    (status === 'available' || status === 'on_duty') ? '#059669' : status === 'on_call' ? '#7c3aed' : status === 'busy' ? '#d97706' : '#64748b';
 
   return L.divIcon({
     className: 'custom-leaflet-marker',
@@ -228,10 +229,12 @@ export const MapView: React.FC<MapViewProps> = ({
         {/* Agent Markers */}
         {showAgents &&
           agents.map((agent) => (
+
+
             <Marker
               key={`${agent.id}-${agent.currentLocation.lat}-${agent.currentLocation.lng}`}
               position={[agent.currentLocation.lat, agent.currentLocation.lng]}
-              icon={createAgentIcon(agent.availability)}
+              icon={createAgentIcon(getAgentDutyStatus(agent).status)}
               eventHandlers={{
                 click: () => onSelectAgent?.(agent.id),
               }}
@@ -241,15 +244,9 @@ export const MapView: React.FC<MapViewProps> = ({
                   <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                     <span className="font-bold text-sm text-slate-900">{agent.name}</span>
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${
-                        agent.availability === 'available'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : agent.availability === 'busy'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : 'bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase border ${getAgentDutyStatus(agent).badgeClass}`}
                     >
-                      {agent.availability}
+                      {getAgentDutyStatus(agent).label}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 font-medium mt-1.5">{agent.title}</p>
@@ -307,6 +304,7 @@ export const MapView: React.FC<MapViewProps> = ({
                 </div>
               </Popup>
             </Marker>
+
           ))}
 
         {/* Task Markers */}
@@ -363,6 +361,7 @@ export const MapView: React.FC<MapViewProps> = ({
                 </div>
               </Popup>
             </Marker>
+
           ))}
       </MapContainer>
 

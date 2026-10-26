@@ -1,3 +1,4 @@
+import { getAgentDutyStatus } from '../../utils/duty';
 import React, { useState, useEffect } from 'react';
 import { AgentProfile, Task, AuthUser } from '../../types';
 import {
@@ -98,15 +99,17 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-900">Field Operations Terminal</h2>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                Mobile Responsive
-              </span>
             </div>
-            <p className="text-xs text-slate-500">
-              {currentUser?.role === 'agent'
-                ? `Logged in as ${currentAgent.name} • Active Field Session`
-                : `Simulating field terminal for: ${currentAgent.name}`}
-            </p>
+            {(() => {
+              const duty = getAgentDutyStatus(currentAgent);
+              return (
+                <p className="text-xs text-slate-500">
+                  {currentUser?.role === 'agent'
+                    ? `Logged in as ${currentAgent.name} • ${duty.label}`
+                    : `Simulating field terminal for: ${currentAgent.name} • ${duty.label}`}
+                </p>
+              );
+            })()}
           </div>
         </div>
 

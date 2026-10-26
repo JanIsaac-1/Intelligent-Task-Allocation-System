@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AgentProfile } from '../types';
 import { uploadCvPdf } from '../services/api';
+import { MASTER_DOMAINS } from '../data/config';
 import { UploadCloud, FileText, CheckCircle2, Plus, X, Trash2, Loader2 } from 'lucide-react';
 
 interface AddAgentModalProps {
@@ -16,7 +17,7 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ onAddAgent, onClos
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+254 7');
   const [title, setTitle] = useState('');
-  const [domain, setDomain] = useState<AgentProfile['domain']>('Telecommunications');
+  const [domain, setDomain] = useState<AgentProfile['domain']>(MASTER_DOMAINS[0].domain);
   const [experienceYears, setExperienceYears] = useState(3);
   const [skillsText, setSkillsText] = useState('');
   const [certificationsText, setCertificationsText] = useState('');
@@ -226,18 +227,35 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ onAddAgent, onClos
                 />
               </div>
               <div>
-                <label className="text-slate-700 font-semibold mb-1 block">Primary Domain</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-700 font-semibold block">Primary Domain</label>
+                  <span className="text-[10px] text-blue-600 font-bold">22 Specialized Domains</span>
+                </div>
                 <select
                   value={domain}
-                  onChange={(e) => setDomain(e.target.value as any)}
-                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                  onChange={(e) => {
+                    const sel = e.target.value;
+                    setDomain(sel);
+                    const domObj = MASTER_DOMAINS.find(d => d.domain === sel);
+                    if (domObj) {
+                      if (!title.trim() && domObj.titles && domObj.titles.length > 0) {
+                        setTitle(domObj.titles[0]);
+                      }
+                      if (!skillsText.trim()) {
+                        setSkillsText(domObj.skills.slice(0, 4).join(', '));
+                      }
+                      if (!certificationsText.trim() && domObj.certifications.length > 0) {
+                        setCertificationsText(domObj.certifications.slice(0, 2).join(', '));
+                      }
+                    }
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 text-xs sm:text-sm"
                 >
-                  <option value="Telecommunications">Telecommunications</option>
-                  <option value="Electrical">Electrical</option>
-                  <option value="Plumbing">Plumbing</option>
-                  <option value="HVAC">HVAC</option>
-                  <option value="IT Support">IT Support</option>
-                  <option value="General Maintenance">General Maintenance</option>
+                  {MASTER_DOMAINS.map((dom) => (
+                    <option key={dom.code} value={dom.domain}>
+                      [{dom.code}] {dom.domain}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -280,16 +298,49 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ onAddAgent, onClos
             </div>
 
             <div>
-              <label className="text-slate-700 font-semibold mb-1 block">
-                Extracted Technical Skills (comma-separated)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-700 font-semibold block">
+                  Extracted Technical Skills (comma-separated)
+                </label>
+                <span className="text-[10px] text-slate-400">Click chips to add</span>
+              </div>
               <input
                 type="text"
                 value={skillsText}
                 onChange={(e) => setSkillsText(e.target.value)}
-                placeholder="e.g. Solar inverter wiring, battery bank diagnostics, PV module testing"
+                placeholder="e.g. Fiber optic cable fusion splicing, OTDR fault trace analysis"
                 className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600"
               />
+              {/* Dynamic Domain Skills Chips */}
+              {(() => {
+                const domObj = MASTER_DOMAINS.find(d => d.domain === domain);
+                if (!domObj) return null;
+                return (
+                  <div className="mt-1.5 flex flex-wrap gap-1 items-center">
+                    <span className="text-[10px] text-slate-500 font-semibold">Suggested:</span>
+                    {domObj.skills.map((skill, sIdx) => {
+                      const isAdded = skillsText.toLowerCase().includes(skill.toLowerCase());
+                      return (
+                        <button
+                          key={sIdx}
+                          type="button"
+                          onClick={() => {
+                            if (isAdded) return;
+                            setSkillsText(prev => prev ? `${prev}, ${skill}` : skill);
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition font-medium ${
+                            isAdded
+                              ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold cursor-default'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                        >
+                          {isAdded ? `✓ ${skill}` : `+ ${skill}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             <div>

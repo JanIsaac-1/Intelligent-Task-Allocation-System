@@ -1,3 +1,4 @@
+import { getAgentDutyStatus } from '../../utils/duty';
 import React, { useState, useEffect } from 'react';
 import { AgentProfile, Task, AllocationWeights } from '../../types';
 import { MapView } from '../MapView';
@@ -59,7 +60,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending');
   const activeTasks = tasks.filter((t) => t.status === 'assigned' || t.status === 'in_progress');
-  const availableAgents = agents.filter((a) => a.availability === 'available');
+  const onDutyAgents = agents.filter((a) => getAgentDutyStatus(a).isDutyActive);
+  const offDutyAgents = agents.filter((a) => !getAgentDutyStatus(a).isDutyActive);
+  const availableAgents = onDutyAgents;
 
   return (
     <div className="space-y-6">
@@ -81,12 +84,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-xs">
           <div>
             <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-              Available Technicians
+              On-Duty Technicians
             </span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              {availableAgents.length} <span className="text-xs text-slate-400 font-normal">/ {agents.length}</span>
+              {onDutyAgents.length} <span className="text-xs text-slate-400 font-normal">/ {agents.length}</span>
             </div>
-            <span className="text-[11px] text-emerald-600 font-medium">Ready on Field</span>
+            <span className={`text-[11px] font-medium ${onDutyAgents.length > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+              {offDutyAgents.length > 0 ? `${offDutyAgents.length} Off-Duty (Shift Ended)` : 'All Technicians On Duty'}
+            </span>
           </div>
           <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center">
             <Users className="w-5 h-5" />
@@ -323,17 +328,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-xs text-slate-900">{agent.name}</span>
-                            <span
-                              className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                                agent.availability === 'available'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : agent.availability === 'busy'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-slate-200 text-slate-700'
-                              }`}
-                            >
-                              {agent.availability}
-                            </span>
+                            {(() => {
+                              const duty = getAgentDutyStatus(agent);
+                              return (
+                                <span
+                                  className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase border ${duty.badgeClass}`}
+                                >
+                                  {duty.label}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <p className="text-[11px] text-slate-600">{agent.title}</p>
                         </div>

@@ -1,3 +1,4 @@
+import { getAgentDutyStatus } from '../utils/duty';
 import React, { useState, useEffect } from 'react';
 import { Task, AgentProfile, AllocationWeights, AllocationScore } from '../types';
 import { rankCandidates } from '../services/api';
@@ -40,7 +41,32 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
         );
         const proximityScore = calculateProximityScore(distanceKm);
         const workloadScore = Math.max(0.1, 1 - agent.activeTaskCount * 0.3);
-        const domainMatch = agent.domain.toLowerCase() === task.category.toLowerCase() ? 0.85 : 0.35;
+        // Robust multi-domain compatibility score
+        const agentDom = agent.domain.toLowerCase().trim();
+        const taskCat = task.category.toLowerCase().trim();
+        let domainMatch = 0.35;
+        if (agentDom === taskCat) {
+          domainMatch = 0.95;
+        } else if (agentDom.includes(taskCat) || taskCat.includes(agentDom)) {
+          domainMatch = 0.85;
+        } else if (
+          (agentDom.includes('fiber') && taskCat.includes('telecom')) ||
+          (agentDom.includes('wire') && taskCat.includes('electric')) ||
+          (agentDom.includes('solar') && taskCat.includes('electric')) ||
+          (agentDom.includes('cabling') && taskCat.includes('lan')) ||
+          (agentDom.includes('plumb') && taskCat.includes('water'))
+        ) {
+          domainMatch = 0.80;
+        } else {
+          const hasSharedSkill = agent.skills.some((sk) =>
+            task.requiredSkills.some(
+              (req) =>
+                sk.toLowerCase().includes(req.toLowerCase()) ||
+                req.toLowerCase().includes(sk.toLowerCase())
+            )
+          );
+          if (hasSharedSkill) domainMatch = 0.70;
+        }
         const compositeScore = parseFloat(
           (
             weights.wSkill * domainMatch +

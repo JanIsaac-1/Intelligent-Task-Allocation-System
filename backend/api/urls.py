@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     UserViewSet, AgentProfileViewSet, TaskViewSet,
-    PerformanceLogViewSet, api_login, api_register, api_logout, parse_cv_pdf
+    PerformanceLogViewSet, api_login, api_register, api_logout, parse_cv_pdf, system_security_settings
 )
 
 router = DefaultRouter()
@@ -19,6 +19,9 @@ urlpatterns = [
 
     # PDF Document parsing endpoint
     path('parse-cv/', parse_cv_pdf, name='parse_cv_pdf'),
+
+    # System Security & Master Passcode
+    path('system/security/', system_security_settings, name='system_security'),
 
     # ViewSet CRUD routes
     path('', include(router.urls)),

@@ -14,6 +14,8 @@ class User(AbstractUser):
         ('active', 'Active'),
         ('suspended', 'Suspended'),
         ('pending', 'Pending Approval'),
+        ('locked', 'Locked Out'),
+        ('rejected', 'Application Denied'),
     )
 
     email = models.EmailField(unique=True)
@@ -62,6 +64,12 @@ class AgentProfile(models.Model):
     # Workload Balancing Attributes
     active_task_count = models.IntegerField(default=0)
     completed_tasks_count = models.IntegerField(default=0)
+    
+    # Work Shifts & Working Hours
+    shift_name = models.CharField(max_length=60, default='Standard Business (08:00 - 17:00)', blank=True)
+    shift_start = models.CharField(max_length=10, default='08:00', blank=True)
+    shift_end = models.CharField(max_length=10, default='17:00', blank=True)
+    is_on_call = models.BooleanField(default=False)
     
     # 384-dimensional dense SBERT skill embedding vector
     skill_embedding = models.JSONField(blank=True, null=True, help_text="SBERT 384-dim dense embedding vector")
