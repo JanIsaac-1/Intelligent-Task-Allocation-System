@@ -139,9 +139,13 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
                 <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono font-bold">
                   {task.id}
                 </span>
+                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium border border-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                  Fine-Tuned SBERT Active
+                </span>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                Weighted Composite Scoring (Skill Match + Proximity + Workload)
+                Weighted Composite Scoring (Kenyan Field SBERT + Proximity + Workload)
               </p>
             </div>
           </div>
@@ -194,7 +198,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
               <div className="space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-700 font-medium flex items-center gap-1">
-                    <Award className="w-3.5 h-3.5 text-blue-600" /> w₁ Skill Match (NLP)
+                    <Award className="w-3.5 h-3.5 text-blue-600" /> w₁ Skill Match (Kenyan SBERT)
                   </span>
                   <span className="font-mono text-blue-700 font-bold">{weights.wSkill.toFixed(2)}</span>
                 </div>
@@ -324,7 +328,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
                     <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2 border-t border-slate-200/80 text-[11px]">
                       <div>
                         <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
-                          <span>Skill Match:</span>
+                          <span>Skill Match (SBERT):</span>
                           <span className="font-bold text-blue-700">
                             {(candidate.skillScore * 100).toFixed(0)}%
                           </span>

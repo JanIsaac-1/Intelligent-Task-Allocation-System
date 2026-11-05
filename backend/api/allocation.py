@@ -21,10 +21,10 @@ def get_sbert_model():
         try:
             from sentence_transformers import SentenceTransformer
             _SBERT_MODEL = SentenceTransformer(model_dir)
-            print(f"✅ Loaded fine-tuned SBERT model from {model_dir}")
+            print(f"[OK] Loaded fine-tuned SBERT model from {model_dir}")
             return _SBERT_MODEL
         except Exception as e:
-            print(f"⚠️ Could not load SBERT from {model_dir}: {e}")
+            print(f"[WARN] Could not load SBERT from {model_dir}: {e}")
     return None
 
 def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -134,6 +134,15 @@ def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0
     task_full_text = f"{task.title}. {task.description}. Category: {task.category}."
     required_skills = task.required_skills if isinstance(task.required_skills, list) else []
 
+    # Encode task problem text once with fine-tuned Kenyan SBERT
+    model = get_sbert_model()
+    task_emb = None
+    if model is not None:
+        try:
+            task_emb = model.encode(task_full_text, normalize_embeddings=True)
+        except Exception as e:
+            print(f"[WARN] Failed to encode task text with SBERT: {e}")
+
     for agent in available_agents:
         is_on_duty, duty_status, duty_label = is_agent_on_duty_nairobi(agent)
 
@@ -147,9 +156,18 @@ def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0
         # Workload calculation
         s_work = calculate_workload_score(agent.active_task_count)
 
-        # Skill semantic matching
-        profile_text = f"{agent.title} in {agent.domain}. Skills: {', '.join(agent.skills)}. Certifications: {', '.join(agent.certifications)}. {agent.bio or ''}"
-        s_skill = calculate_skill_similarity(task_full_text, profile_text, agent.skills, required_skills)
+        # Semantic skill matching using precomputed dense SBERT vectors
+        if task_emb is not None and getattr(agent, 'skill_embedding', None):
+            try:
+                agent_emb = np.array(agent.skill_embedding, dtype=np.float32)
+                sim = float(np.dot(task_emb, agent_emb))
+                s_skill = round(max(0.05, min(0.99, (sim + 1.0) / 2.0 if sim < 0 else sim)), 4)
+            except Exception:
+                profile_text = f"{agent.title} in {agent.domain}. Skills: {', '.join(agent.skills)}. Certifications: {', '.join(agent.certifications)}. {agent.bio or ''}"
+                s_skill = calculate_skill_similarity(task_full_text, profile_text, agent.skills, required_skills)
+        else:
+            profile_text = f"{agent.title} in {agent.domain}. Skills: {', '.join(agent.skills)}. Certifications: {', '.join(agent.certifications)}. {agent.bio or ''}"
+            s_skill = calculate_skill_similarity(task_full_text, profile_text, agent.skills, required_skills)
 
         # Shift active weighting factor: prioritize on-duty technicians
         shift_factor = 1.0 if is_on_duty else 0.65
