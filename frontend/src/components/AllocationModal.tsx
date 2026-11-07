@@ -1,3 +1,4 @@
+import { getAgentDutyStatus } from '../utils/duty';
 import React, { useState, useEffect } from 'react';
 import { Task, AgentProfile, AllocationWeights, AllocationScore } from '../types';
 import { rankCandidates } from '../services/api';
@@ -40,7 +41,32 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
         );
         const proximityScore = calculateProximityScore(distanceKm);
         const workloadScore = Math.max(0.1, 1 - agent.activeTaskCount * 0.3);
-        const domainMatch = agent.domain.toLowerCase() === task.category.toLowerCase() ? 0.85 : 0.35;
+        // Robust multi-domain compatibility score
+        const agentDom = agent.domain.toLowerCase().trim();
+        const taskCat = task.category.toLowerCase().trim();
+        let domainMatch = 0.35;
+        if (agentDom === taskCat) {
+          domainMatch = 0.95;
+        } else if (agentDom.includes(taskCat) || taskCat.includes(agentDom)) {
+          domainMatch = 0.85;
+        } else if (
+          (agentDom.includes('fiber') && taskCat.includes('telecom')) ||
+          (agentDom.includes('wire') && taskCat.includes('electric')) ||
+          (agentDom.includes('solar') && taskCat.includes('electric')) ||
+          (agentDom.includes('cabling') && taskCat.includes('lan')) ||
+          (agentDom.includes('plumb') && taskCat.includes('water'))
+        ) {
+          domainMatch = 0.80;
+        } else {
+          const hasSharedSkill = agent.skills.some((sk) =>
+            task.requiredSkills.some(
+              (req) =>
+                sk.toLowerCase().includes(req.toLowerCase()) ||
+                req.toLowerCase().includes(sk.toLowerCase())
+            )
+          );
+          if (hasSharedSkill) domainMatch = 0.70;
+        }
         const compositeScore = parseFloat(
           (
             weights.wSkill * domainMatch +
@@ -113,9 +139,13 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
                 <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono font-bold">
                   {task.id}
                 </span>
+                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium border border-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                  Fine-Tuned SBERT Active
+                </span>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                Weighted Composite Scoring (Skill Match + Proximity + Workload)
+                Weighted Composite Scoring (Kenyan Field SBERT + Proximity + Workload)
               </p>
             </div>
           </div>
@@ -168,7 +198,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
               <div className="space-y-1">
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-700 font-medium flex items-center gap-1">
-                    <Award className="w-3.5 h-3.5 text-blue-600" /> w₁ Skill Match (NLP)
+                    <Award className="w-3.5 h-3.5 text-blue-600" /> w₁ Skill Match (Kenyan SBERT)
                   </span>
                   <span className="font-mono text-blue-700 font-bold">{weights.wSkill.toFixed(2)}</span>
                 </div>
@@ -298,7 +328,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
                     <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2 border-t border-slate-200/80 text-[11px]">
                       <div>
                         <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
-                          <span>Skill Match:</span>
+                          <span>Skill Match (SBERT):</span>
                           <span className="font-bold text-blue-700">
                             {(candidate.skillScore * 100).toFixed(0)}%
                           </span>

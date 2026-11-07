@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Task, TaskPriority } from '../../types';
+import { MASTER_DOMAINS } from '../../data/config';
 import {
   Send,
   MapPin,
@@ -90,7 +91,7 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<Task['category']>('Telecommunications');
+  const [category, setCategory] = useState<Task['category']>(MASTER_DOMAINS[0].domain);
   const [requiredSkillsText, setRequiredSkillsText] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('high');
 
@@ -104,8 +105,8 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
   const [gpsStatusMessage, setGpsStatusMessage] = useState<string | null>(null);
 
   // Requester Info
-  const [requesterName, setRequesterName] = useState('Facilities Operations Directorate');
-  const [requesterPhone, setRequesterPhone] = useState('+254 722 123 456');
+  const [requesterName, setRequesterName] = useState('');
+  const [requesterPhone, setRequesterPhone] = useState('');
   const [submittedTask, setSubmittedTask] = useState<Task | null>(null);
 
   // Reverse geocode to resolve human-readable address from coordinates
@@ -279,6 +280,8 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                   setDescription('');
                   setRequiredSkillsText('');
                   setAddressName('');
+                  setRequesterName('');
+                  setRequesterPhone('');
                 }}
                 className="px-3.5 py-1.5 rounded-md text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition"
               >
@@ -328,18 +331,27 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
             {/* Category & Priority */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="text-slate-700 font-semibold mb-1 block">Service Domain</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-700 font-semibold block">Service Domain</label>
+                  <span className="text-[11px] text-blue-600 font-semibold">22 Specialized Domains</span>
+                </div>
                 <select
                   value={category}
-                  onChange={(e) => setCategory(e.target.value as any)}
-                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    setCategory(selected);
+                    const domObj = MASTER_DOMAINS.find(d => d.domain === selected);
+                    if (domObj && !requiredSkillsText.trim()) {
+                      setRequiredSkillsText(domObj.skills.slice(0, 3).join(', '));
+                    }
+                  }}
+                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium text-xs sm:text-sm"
                 >
-                  <option value="Telecommunications">Telecommunications (Fiber / Radio / LAN)</option>
-                  <option value="Electrical">Electrical (3-Phase / Breakers / Generators)</option>
-                  <option value="HVAC">HVAC & Climate Systems</option>
-                  <option value="Plumbing">Plumbing & Hydraulic Pumps</option>
-                  <option value="IT Support">IT Hardware & Structured Cabling</option>
-                  <option value="General Maintenance">General Maintenance</option>
+                  {MASTER_DOMAINS.map((dom) => (
+                    <option key={dom.code} value={dom.domain}>
+                      [{dom.code}] {dom.domain}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -348,7 +360,7 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as any)}
-                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium text-xs sm:text-sm"
                 >
                   <option value="critical">Critical (Immediate Emergency)</option>
                   <option value="high">High (Service Disruption)</option>
@@ -358,18 +370,52 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
               </div>
             </div>
 
-            {/* Skills */}
+            {/* Skills with Quick Clickable Chips */}
             <div>
-              <label className="text-slate-700 font-semibold mb-1 block">
-                Required Competencies (comma-separated)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-700 font-semibold block">
+                  Required Competencies (comma-separated)
+                </label>
+                <span className="text-[10px] text-slate-400">Click chips below to add</span>
+              </div>
               <input
                 type="text"
                 value={requiredSkillsText}
                 onChange={(e) => setRequiredSkillsText(e.target.value)}
-                placeholder="e.g. Fiber optic splicing, OTDR testing"
-                className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                placeholder="e.g. Fiber optic cable fusion splicing, OTDR fault trace analysis"
+                className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 text-xs sm:text-sm"
               />
+
+              {/* Dynamic Domain Skills Badges */}
+              {(() => {
+                const activeDom = MASTER_DOMAINS.find(d => d.domain === category);
+                if (!activeDom) return null;
+                return (
+                  <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Suggested:</span>
+                    {activeDom.skills.map((skill, sIdx) => {
+                      const isSelected = requiredSkillsText.toLowerCase().includes(skill.toLowerCase());
+                      return (
+                        <button
+                          key={sIdx}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) return;
+                            setRequiredSkillsText(prev => prev ? `${prev}, ${skill}` : skill);
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border transition font-medium ${
+                            isSelected
+                              ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold cursor-default'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                        >
+                          {isSelected ? `✓ ${skill}` : `+ ${skill}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* ============================================================ */}

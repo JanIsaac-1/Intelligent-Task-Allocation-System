@@ -53,7 +53,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [regRole, setRegRole] = useState<'administrator' | 'agent' | 'requester'>('administrator');
   const [regPhone, setRegPhone] = useState('+254 7');
   const [regDepartment, setRegDepartment] = useState('');
-  const [regAdminKey, setRegAdminKey] = useState('janjakes');
+  const [regAdminKey, setRegAdminKey] = useState('');
   const [regDomain, setRegDomain] = useState(COMMON_DOMAINS[0]);
   const [regExperience, setRegExperience] = useState(3);
   const [regSkillsText, setRegSkillsText] = useState('');
@@ -462,12 +462,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                         type="password"
                         value={regAdminKey}
                         onChange={(e) => setRegAdminKey(e.target.value)}
-                        placeholder="Enter system passcode (e.g. janjakes)"
+                        placeholder="Enter administrator authorization key"
                         className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-blue-300 rounded-md bg-white text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
                     <p className="text-[10px] text-blue-800 mt-1">
-                      Entering your system key (<code>janjakes</code>) immediately activates this administrator account without needing approval.
+                      Authorized personnel enter the master authorization key for immediate activation. Unverified accounts remain pending review.
                     </p>
                   </div>
 
@@ -570,7 +570,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   <>
                     <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <span>
-                      <strong>Superuser Verification:</strong> Entering the system passcode (<code>janjakes</code>) will immediately activate your account with full administrator access.
+                      <strong>Superuser Authorization:</strong> Enter a valid administrator key for immediate activation. Unverified accounts remain pending review by dispatch administration.
                     </span>
                   </>
                 ) : (

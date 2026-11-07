@@ -17,6 +17,7 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-geotask-default-key-2026')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ADMIN_REGISTRATION_KEY = os.getenv('ADMIN_REGISTRATION_KEY', 'geotask2026')
 
 # Application definition
 INSTALLED_APPS = [

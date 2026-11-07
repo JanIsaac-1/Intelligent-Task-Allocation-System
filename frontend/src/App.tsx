@@ -33,6 +33,13 @@ import {
   toggleAgentAvailability,
   updateAgentProfile,
   updateUserStatusApi,
+  approveUserApi,
+  apiDenyUser,
+  apiResetUserPassword,
+  apiToggleUserLockout,
+  apiUpdateAgentShift,
+  apiFetchSecuritySettings,
+  apiUpdateMasterKey,
 } from './services/api';
 import { reverseGeocodeLocation } from './utils/geo';
 
@@ -545,6 +552,114 @@ export const App: React.FC = () => {
     );
   };
 
+  // Approve pending user registration
+  const handleApproveUser = async (userId: string) => {
+    try {
+      await approveUserApi(userId);
+      setSystemUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: 'active' } : u))
+      );
+      const user = systemUsers.find((u) => u.id === userId);
+      addLog(
+        'User Registration Approved',
+        `User ${user?.fullName || userId} (${user?.role}) has been approved and activated.`,
+        'success'
+      );
+      const updatedAgents = await fetchAgents();
+      setAgents(updatedAgents || []);
+    } catch (err: any) {
+      console.error('Failed to approve user:', err);
+      alert(err.message || 'Failed to approve user');
+    }
+  };
+
+  // Deny / Reject user registration
+  const handleDenyUser = async (userId: string, reason?: string, deleteAccount?: boolean) => {
+    try {
+      const res = await apiDenyUser(userId, reason, deleteAccount);
+      if (deleteAccount || res?.deleted) {
+        setSystemUsers((prev) => prev.filter((u) => u.id !== userId));
+        addLog('Registration Purged', `Registration request #${userId} was deleted from database.`, 'warning');
+      } else {
+        setSystemUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, status: 'rejected' } : u))
+        );
+        addLog('Registration Denied', `Registration request #${userId} was rejected. Reason: ${reason || 'Denied by admin'}`, 'warning');
+      }
+    } catch (err: any) {
+      console.error('Failed to deny user:', err);
+      alert(err.message || 'Failed to deny user');
+    }
+  };
+
+  // Reset user password
+  const handleResetPassword = async (userId: string, newPassword: string, unlock?: boolean) => {
+    try {
+      await apiResetUserPassword(userId, newPassword, unlock);
+      if (unlock) {
+        setSystemUsers((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, status: 'active' } : u))
+        );
+      }
+      const user = systemUsers.find((u) => u.id === userId);
+      addLog('Password Reset', `Administrator reset credentials for ${user?.fullName || userId}.`, 'info');
+    } catch (err: any) {
+      console.error('Failed to reset password:', err);
+      throw err;
+    }
+  };
+
+  // Toggle account lockout
+  const handleToggleLockout = async (userId: string, lock: boolean) => {
+    try {
+      await apiToggleUserLockout(userId, lock);
+      const targetStatus = lock ? 'locked' : 'active';
+      setSystemUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: targetStatus } : u))
+      );
+      const user = systemUsers.find((u) => u.id === userId);
+      addLog(
+        lock ? 'Account Locked' : 'Account Restored',
+        `Account for ${user?.fullName || userId} is now ${targetStatus.toUpperCase()}.`,
+        lock ? 'warning' : 'success'
+      );
+    } catch (err: any) {
+      console.error('Failed to toggle lockout:', err);
+      alert(err.message || 'Failed to update lockout state');
+    }
+  };
+
+  // Update technician shift
+  const handleUpdateAgentShift = async (
+    agentId: string,
+    shift: { shiftName?: string; shiftStart?: string; shiftEnd?: string; isOnCall?: boolean }
+  ) => {
+    try {
+      const updated = await apiUpdateAgentShift(agentId, shift);
+      setAgents((prev) =>
+        prev.map((a) =>
+          a.id === agentId
+            ? {
+                ...a,
+                shiftName: updated.shift_name,
+                shiftStart: updated.shift_start,
+                shiftEnd: updated.shift_end,
+                isOnCall: Boolean(updated.is_on_call),
+              }
+            : a
+        )
+      );
+      addLog(
+        'Work Shift Updated',
+        `Work schedule for technician #${agentId} updated to ${shift.shiftName || 'custom'}.`,
+        'info'
+      );
+    } catch (err: any) {
+      console.error('Failed to update shift:', err);
+      throw err;
+    }
+  };
+
   // Apply algorithm preset
   const handleApplyPreset = (preset: PresetConfig) => {
     setWeights(preset.weights);
@@ -577,6 +692,7 @@ export const App: React.FC = () => {
         onTabChange={setActiveTab}
         agents={agents}
         tasks={tasks}
+        systemUsers={systemUsers}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
@@ -618,9 +734,15 @@ export const App: React.FC = () => {
         {activeTab === 'admin-portal' && (
           <AdminPortalView
             systemUsers={systemUsers}
+            agents={agents}
             onAddUser={handleAddUser}
             onUpdateUserStatus={handleUpdateUserStatus}
             onUpdateUserRole={handleUpdateUserRole}
+            onApproveUser={handleApproveUser}
+            onDenyUser={handleDenyUser}
+            onResetPassword={handleResetPassword}
+            onToggleLockout={handleToggleLockout}
+            onUpdateAgentShift={handleUpdateAgentShift}
             currentWeights={weights}
             onApplyPreset={handleApplyPreset}
             policy={policy}

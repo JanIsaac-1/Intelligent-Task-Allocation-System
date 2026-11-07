@@ -1,6 +1,8 @@
 import math
 import os
 import numpy as np
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # Earth radius in kilometers
 EARTH_RADIUS_KM = 6371.0
@@ -19,10 +21,10 @@ def get_sbert_model():
         try:
             from sentence_transformers import SentenceTransformer
             _SBERT_MODEL = SentenceTransformer(model_dir)
-            print(f"✅ Loaded fine-tuned SBERT model from {model_dir}")
+            print(f"[OK] Loaded fine-tuned SBERT model from {model_dir}")
             return _SBERT_MODEL
         except Exception as e:
-            print(f"⚠️ Could not load SBERT from {model_dir}: {e}")
+            print(f"[WARN] Could not load SBERT from {model_dir}: {e}")
     return None
 
 def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -93,18 +95,57 @@ def calculate_skill_similarity(task_text: str, agent_profile_text: str, agent_sk
 
     sim = min(0.98, max(0.15, (base_jaccard * 2.5) + skill_boost + 0.3))
     return round(sim, 4)
+def is_agent_on_duty_nairobi(agent):
+    """Evaluates whether a technician is actively on duty in Nairobi Metro time."""
+    if getattr(agent, 'is_on_call', False):
+        return True, 'on_call', 'On-Call (Standby)'
+    
+    start_str = getattr(agent, 'shift_start', '08:00') or '08:00'
+    end_str = getattr(agent, 'shift_end', '17:00') or '17:00'
+    
+    try:
+        now_nairobi = datetime.now(ZoneInfo('Africa/Nairobi'))
+        curr_min = now_nairobi.hour * 60 + now_nairobi.minute
+        
+        s_parts = [int(p) for p in start_str.split(':')[:2]]
+        e_parts = [int(p) for p in end_str.split(':')[:2]]
+        start_min = s_parts[0] * 60 + (s_parts[1] if len(s_parts) > 1 else 0)
+        end_min = e_parts[0] * 60 + (e_parts[1] if len(e_parts) > 1 else 0)
+        
+        if start_min <= end_min:
+            on_duty = (start_min <= curr_min <= end_min)
+        else:
+            on_duty = (curr_min >= start_min or curr_min <= end_min)
+            
+        if on_duty:
+            return True, 'on_duty', 'Available (On Duty)'
+        return False, 'off_duty', f'Off Duty (Shift Ended at {end_str})'
+    except Exception:
+        return True, 'on_duty', 'Available (On Duty)'
 
 def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0.30, w_workload=0.20, max_radius_km=25.0):
     """
-    Ranks all available agents for a task using the multi-criteria composite formula:
-    Total = (w_skill * S_skill) + (w_proximity * S_proximity) + (w_workload * S_workload)
+    Ranks all available agents for a task using multi-criteria composite formula,
+    prioritizing active on-duty / on-call technicians over off-shift agents:
+    Total = ((w_skill * S_skill) + (w_proximity * S_proximity) + (w_workload * S_workload)) * shift_factor
     """
     candidates = []
 
     task_full_text = f"{task.title}. {task.description}. Category: {task.category}."
     required_skills = task.required_skills if isinstance(task.required_skills, list) else []
 
+    # Encode task problem text once with fine-tuned Kenyan SBERT
+    model = get_sbert_model()
+    task_emb = None
+    if model is not None:
+        try:
+            task_emb = model.encode(task_full_text, normalize_embeddings=True)
+        except Exception as e:
+            print(f"[WARN] Failed to encode task text with SBERT: {e}")
+
     for agent in available_agents:
+        is_on_duty, duty_status, duty_label = is_agent_on_duty_nairobi(agent)
+
         # Distance calculation
         dist_km = calculate_haversine_distance(
             task.target_lat, task.target_lng,
@@ -115,12 +156,22 @@ def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0
         # Workload calculation
         s_work = calculate_workload_score(agent.active_task_count)
 
-        # Skill semantic matching
-        profile_text = f"{agent.title} in {agent.domain}. Skills: {', '.join(agent.skills)}. Certifications: {', '.join(agent.certifications)}. {agent.bio or ''}"
-        s_skill = calculate_skill_similarity(task_full_text, profile_text, agent.skills, required_skills)
+        # Semantic skill matching using precomputed dense SBERT vectors
+        if task_emb is not None and getattr(agent, 'skill_embedding', None):
+            try:
+                agent_emb = np.array(agent.skill_embedding, dtype=np.float32)
+                sim = float(np.dot(task_emb, agent_emb))
+                s_skill = round(max(0.05, min(0.99, (sim + 1.0) / 2.0 if sim < 0 else sim)), 4)
+            except Exception:
+                profile_text = f"{agent.title} in {agent.domain}. Skills: {', '.join(agent.skills)}. Certifications: {', '.join(agent.certifications)}. {agent.bio or ''}"
+                s_skill = calculate_skill_similarity(task_full_text, profile_text, agent.skills, required_skills)
+        else:
+            profile_text = f"{agent.title} in {agent.domain}. Skills: {', '.join(agent.skills)}. Certifications: {', '.join(agent.certifications)}. {agent.bio or ''}"
+            s_skill = calculate_skill_similarity(task_full_text, profile_text, agent.skills, required_skills)
 
-        # Composite allocation score
-        total_score = round((w_skill * s_skill) + (w_proximity * s_prox) + (w_workload * s_work), 4)
+        # Shift active weighting factor: prioritize on-duty technicians
+        shift_factor = 1.0 if is_on_duty else 0.65
+        total_score = round(((w_skill * s_skill) + (w_proximity * s_prox) + (w_workload * s_work)) * shift_factor, 4)
 
         candidates.append({
             'agent_id': agent.id,
@@ -135,6 +186,11 @@ def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0
             'active_task_count': agent.active_task_count,
             'availability': agent.availability,
             'battery_level': agent.battery_level,
+            'is_on_duty': is_on_duty,
+            'duty_status': duty_status,
+            'duty_label': duty_label,
+            'shift_name': getattr(agent, 'shift_name', 'Standard Business (08:00 - 17:00)'),
+            'shift_hours': f"{getattr(agent, 'shift_start', '08:00')} - {getattr(agent, 'shift_end', '17:00')}",
         })
 
     # Sort descending by total score

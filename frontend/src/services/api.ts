@@ -301,6 +301,10 @@ export async function fetchAgents(): Promise<AgentProfile[]> {
     }?w=150&auto=format&fit=crop&q=80`,
     batteryLevel: a.battery_level || 90,
     lastUpdated: 'Live GPS',
+    shiftName: a.shift_name || 'Standard Business (08:00 - 17:00)',
+    shiftStart: a.shift_start || '08:00',
+    shiftEnd: a.shift_end || '17:00',
+    isOnCall: Boolean(a.is_on_call),
   }));
 }
 
@@ -425,4 +429,53 @@ export async function fetchLogs(): Promise<SystemLog[]> {
   }
 }
 
+export async function apiDenyUser(userId: string | number, reason?: string, deleteAccount?: boolean): Promise<any> {
+  return request(`/users/${userId}/deny/`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || 'Application denied by administrator', delete: Boolean(deleteAccount) }),
+  });
+}
 
+export async function apiResetUserPassword(userId: string | number, newPassword: string, unlock?: boolean): Promise<any> {
+  return request(`/users/${userId}/reset_password/`, {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword, unlock: Boolean(unlock) }),
+  });
+}
+
+export async function apiToggleUserLockout(userId: string | number, lock: boolean): Promise<any> {
+  return request(`/users/${userId}/toggle_lockout/`, {
+    method: 'POST',
+    body: JSON.stringify({ lock }),
+  });
+}
+
+export async function apiUpdateAgentShift(
+  agentId: string | number,
+  shift: { shiftName?: string; shiftStart?: string; shiftEnd?: string; isOnCall?: boolean }
+): Promise<any> {
+  return request(`/agents/${agentId}/update_shift/`, {
+    method: 'POST',
+    body: JSON.stringify({
+      shift_name: shift.shiftName,
+      shift_start: shift.shiftStart,
+      shift_end: shift.shiftEnd,
+      is_on_call: shift.isOnCall,
+    }),
+  });
+}
+
+export async function apiFetchSecuritySettings(): Promise<{
+  master_key: string;
+  allow_admin_registration: boolean;
+  require_approval_all: boolean;
+}> {
+  return request('/system/security/');
+}
+
+export async function apiUpdateMasterKey(masterKey: string): Promise<any> {
+  return request('/system/security/', {
+    method: 'POST',
+    body: JSON.stringify({ master_key: masterKey }),
+  });
+}
