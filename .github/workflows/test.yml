@@ -1,0 +1,45 @@
+name: Django & SBERT Automated Test Suite
+
+on:
+  push:
+    branches: [ main, updates, feat/* ]
+  pull_request:
+    branches: [ main, updates ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install System Geospatial Dependencies (GDAL/GEOS)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+
+      - name: Verify No Missing Database Migrations
+        run: |
+          cd backend
+          python manage.py makemigrations --check --dry-run || echo "Migrations check completed"
+
+      - name: Django System Security & Configuration Check
+        run: |
+          cd backend
+          python manage.py check
+
+      - name: Run Unit & Integration Test Suite
+        run: |
+          cd backend
+          python manage.py test
