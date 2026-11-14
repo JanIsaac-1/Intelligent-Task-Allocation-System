@@ -225,7 +225,3 @@ Intelligent-Task-Allocation-System/
 ```
 
 ---
-
-## 📜 8. License & Academic Attribution
-
-This software is developed as part of undergraduate research in the **School of Computing and Engineering Sciences (SCES)** at **Strathmore University**. All rights reserved © 2026.
