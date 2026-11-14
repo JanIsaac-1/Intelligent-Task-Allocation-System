@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Task, AgentProfile, AllocationWeights, AllocationScore } from '../types';
 import { rankCandidates } from '../services/api';
 import { formatDistance, calculateHaversineDistance, calculateProximityScore } from '../utils/geo';
-import { Sliders, Award, Compass, Briefcase, Zap, X, Loader2 } from 'lucide-react';
+import { Sliders, Award, Compass, Briefcase, Zap, X, Loader2, ChevronDown, ChevronUp, Search, Star } from 'lucide-react';
 
 interface AllocationModalProps {
   task: Task;
@@ -25,6 +25,8 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [rankedCandidates, setRankedCandidates] = useState<AllocationScore[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showAllCandidates, setShowAllCandidates] = useState<boolean>(false);
 
   // Compute live ranking from Django SBERT & MCDM Allocation Engine
   useEffect(() => {
@@ -118,6 +120,26 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
   const topAgent = rankedCandidates[0];
   const chosenAgentId = selectedCandidateId || topAgent?.agentId;
   const chosenCandidate = rankedCandidates.find((c) => c.agentId === chosenAgentId);
+
+  // Filter candidates if search query exists
+  const filteredCandidates = rankedCandidates.filter((candidate) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const matchedAgent = agents.find((a) => a.id === candidate.agentId);
+    const nameMatch = candidate.agentName.toLowerCase().includes(q);
+    const titleMatch = candidate.agentTitle.toLowerCase().includes(q);
+    const domainMatch = matchedAgent?.domain?.toLowerCase().includes(q);
+    const locMatch = matchedAgent?.currentLocation?.addressName?.toLowerCase().includes(q);
+    const skillMatch = matchedAgent?.skills?.some((s) => s.toLowerCase().includes(q));
+    return nameMatch || titleMatch || domainMatch || locMatch || skillMatch;
+  });
+
+  const isSearchActive = searchQuery.trim().length > 0;
+  const displayedCandidates = isSearchActive || showAllCandidates
+    ? filteredCandidates
+    : filteredCandidates.slice(0, 3);
+
+  const isChosenDisplayed = displayedCandidates.some((c) => c.agentId === chosenAgentId);
 
   const handleSliderChange = (key: keyof AllocationWeights, value: number) => {
     const newWeights = { ...weights, [key]: value };
@@ -256,125 +278,230 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
           {/* Right Column: Ranked Candidate Agents Leaderboard */}
           <div className="md:col-span-7 flex flex-col space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Ranked Candidates
-              </span>
-              <span className="text-xs text-slate-500">
-                {rankedCandidates.length} Active Technicians Evaluated
+              <div>
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
+                  Ranked Candidates
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {rankedCandidates.length} Active Technicians Evaluated
+                </span>
+              </div>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                {isSearchActive
+                  ? `${filteredCandidates.length} matches`
+                  : showAllCandidates
+                  ? `All ${rankedCandidates.length} Technicians`
+                  : `Top 3 Recommended`}
               </span>
             </div>
 
-            <div className="space-y-2 flex-1 overflow-y-auto pr-1">
-              {rankedCandidates.map((candidate, index) => {
-                const isSelected = candidate.agentId === chosenAgentId;
-                const isTop = index === 0;
-                const matchedAgent = agents.find((a) => a.id === candidate.agentId);
+            {/* Quick Search Filter */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search by technician name, specialization, or location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs pl-8 pr-7 py-1.5 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-slate-50 focus:bg-white text-slate-800 placeholder-slate-400 transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
-                return (
-                  <div
-                    key={candidate.agentId}
-                    onClick={() => setSelectedCandidateId(candidate.agentId)}
-                    className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-50/70 border-blue-500 shadow-xs ring-1 ring-blue-500'
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${
-                            isTop
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-slate-900">
-                              {candidate.agentName}
-                            </span>
-                            {isTop && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300">
-                                Top Recommended
-                              </span>
-                            )}
+            {/* Reminder banner if selected candidate is outside current view */}
+            {!isChosenDisplayed && chosenCandidate && (
+              <div className="p-2.5 bg-blue-50/80 border border-blue-200 rounded-lg flex items-center justify-between text-xs text-blue-900">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-semibold text-blue-950">Selected for dispatch:</span>
+                  <span className="font-bold text-blue-700">{chosenCandidate.agentName}</span>
+                  <span className="text-blue-500 text-[11px]">
+                    (Rank #{rankedCandidates.findIndex((c) => c.agentId === chosenCandidate.agentId) + 1})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAllCandidates(true);
+                    setSearchQuery('');
+                  }}
+                  className="text-blue-700 hover:text-blue-900 underline text-[11px] font-semibold shrink-0 ml-2"
+                >
+                  Show in list
+                </button>
+              </div>
+            )}
+
+            {/* Candidate List or Loading/Empty State */}
+            {isLoading ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500 space-y-2 border border-slate-100 rounded-lg bg-slate-50/50">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                <p className="text-xs font-medium">Computing neural SBERT match & ranking technicians...</p>
+              </div>
+            ) : displayedCandidates.length === 0 ? (
+              <div className="p-6 text-center text-slate-500 text-xs border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                No technicians found matching "{searchQuery}".
+              </div>
+            ) : (
+              <div className="space-y-2 flex-1 overflow-y-auto pr-1">
+                {displayedCandidates.map((candidate) => {
+                  const originalRank =
+                    rankedCandidates.findIndex((c) => c.agentId === candidate.agentId) + 1;
+                  const isSelected = candidate.agentId === chosenAgentId;
+                  const isOptimal = originalRank === 1;
+                  const isAlternative = originalRank === 2 || originalRank === 3;
+                  const matchedAgent = agents.find((a) => a.id === candidate.agentId);
+
+                  return (
+                    <div
+                      key={candidate.agentId}
+                      onClick={() => setSelectedCandidateId(candidate.agentId)}
+                      className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50/70 border-blue-500 shadow-xs ring-1 ring-blue-500'
+                          : isOptimal
+                          ? 'bg-emerald-50/20 border-emerald-200 hover:bg-emerald-50/40'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${
+                              isOptimal
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : isAlternative
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            #{originalRank}
                           </div>
-                          <p className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
-                            <span>{candidate.agentTitle}</span>
-                            {matchedAgent?.currentLocation?.addressName && (
-                              <>
-                                <span className="text-slate-300">•</span>
-                                <span className="text-slate-600 font-medium truncate max-w-[190px]" title={matchedAgent.currentLocation.addressName}>
-                                  📍 {matchedAgent.currentLocation.addressName}
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-xs text-slate-900">
+                                {candidate.agentName}
+                              </span>
+                              {isOptimal && (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                                  <Star className="w-2.5 h-2.5 fill-emerald-600 text-emerald-600" />
+                                  Optimal Match (Recommended)
                                 </span>
-                              </>
-                            )}
-                          </p>
+                              )}
+                              {isAlternative && (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
+                                  Alternative Match
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                              <span>{candidate.agentTitle}</span>
+                              {matchedAgent?.currentLocation?.addressName && (
+                                <>
+                                  <span className="text-slate-300">•</span>
+                                  <span
+                                    className="text-slate-600 font-medium truncate max-w-[190px]"
+                                    title={matchedAgent.currentLocation.addressName}
+                                  >
+                                    📍 {matchedAgent.currentLocation.addressName}
+                                  </span>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 ml-2">
+                          <div className="text-sm font-mono font-bold text-blue-700">
+                            {(candidate.compositeScore * 100).toFixed(1)}%
+                          </div>
+                          <span className="text-[10px] text-slate-500">Composite Score</span>
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <div className="text-sm font-mono font-bold text-blue-700">
-                          {(candidate.compositeScore * 100).toFixed(1)}%
+                      {/* Sub-Score Progress Bars */}
+                      <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2 border-t border-slate-200/80 text-[11px]">
+                        <div>
+                          <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
+                            <span>Skill Match (SBERT):</span>
+                            <span className="font-bold text-blue-700">
+                              {(candidate.skillScore * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-blue-600 h-full rounded-full"
+                              style={{ width: `${candidate.skillScore * 100}%` }}
+                            />
+                          </div>
                         </div>
-                        <span className="text-[10px] text-slate-500">Composite Score</span>
+
+                        <div>
+                          <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
+                            <span>Distance:</span>
+                            <span className="font-bold text-emerald-700">
+                              {formatDistance(candidate.distanceKm)}
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-emerald-600 h-full rounded-full"
+                              style={{ width: `${candidate.proximityScore * 100}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
+                            <span>Workload:</span>
+                            <span className="font-bold text-slate-800">
+                              {(candidate.workloadScore * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-slate-700 h-full rounded-full"
+                              style={{ width: `${candidate.workloadScore * 100}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
 
-                    {/* Sub-Score Progress Bars */}
-                    <div className="grid grid-cols-3 gap-2 mt-2.5 pt-2 border-t border-slate-200/80 text-[11px]">
-                      <div>
-                        <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
-                          <span>Skill Match (SBERT):</span>
-                          <span className="font-bold text-blue-700">
-                            {(candidate.skillScore * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="bg-blue-600 h-full rounded-full"
-                            style={{ width: `${candidate.skillScore * 100}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
-                          <span>Distance:</span>
-                          <span className="font-bold text-emerald-700">
-                            {formatDistance(candidate.distanceKm)}
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="bg-emerald-600 h-full rounded-full"
-                            style={{ width: `${candidate.proximityScore * 100}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-slate-600 mb-0.5 text-[10px]">
-                          <span>Workload:</span>
-                          <span className="font-bold text-slate-800">
-                            {(candidate.workloadScore * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="bg-slate-700 h-full rounded-full"
-                            style={{ width: `${candidate.workloadScore * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                {/* Show All / Show Top 3 Toggle Button */}
+                {!isSearchActive && rankedCandidates.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllCandidates((prev) => !prev)}
+                    className="w-full py-2 px-3 border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition mt-1"
+                  >
+                    {showAllCandidates ? (
+                      <>
+                        <ChevronUp className="w-4 h-4 text-slate-500" />
+                        <span>Show Top 3 Recommendations Only</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-4 h-4 text-slate-500" />
+                        <span>
+                          Show All {rankedCandidates.length} Technicians ({rankedCandidates.length - 3} lower matches)
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
