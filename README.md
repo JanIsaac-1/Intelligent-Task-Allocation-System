@@ -7,13 +7,6 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16_PostGIS-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgis.net/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 
-**Student Researcher:** Jan Isaac Mwaniki Maina (Admission No: 166393)  
-**Supervisor:** Dr. Dickson Owuor  
-**Institution:** Strathmore University — School of Computing and Engineering Sciences (Project II — 2026)  
-**Repository:** [https://github.com/JanIsaac-1/Intelligent-Task-Allocation-System](https://github.com/JanIsaac-1/Intelligent-Task-Allocation-System)  
-**Project Board (Kanban Sprints):** [https://github.com/JanIsaac-1/Intelligent-Task-Allocation-System/projects](https://github.com/JanIsaac-1/Intelligent-Task-Allocation-System/projects)  
-**CI / Automated Test Pipeline:** [https://github.com/JanIsaac-1/Intelligent-Task-Allocation-System/actions](https://github.com/JanIsaac-1/Intelligent-Task-Allocation-System/actions)
-
 ---
 
 ## 📌 1. Project Overview
