@@ -51,6 +51,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showAddAgentModal, setShowAddAgentModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<AgentProfile | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'tasks' | 'agents'>('tasks');
+  const [taskFilterTab, setTaskFilterTab] = useState<'all' | 'unallocated' | 'allocated' | 'completed'>('all');
 
   useEffect(() => {
     if (!selectedTaskId && tasks.length > 0) {
@@ -59,7 +60,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [tasks, selectedTaskId]);
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending');
+  const unallocatedTasks = pendingTasks;
   const activeTasks = tasks.filter((t) => t.status === 'assigned' || t.status === 'in_progress');
+  const allocatedTasks = activeTasks;
+  const completedTasks = tasks.filter((t) => t.status === 'completed');
   const onDutyAgents = agents.filter((a) => getAgentDutyStatus(a).isDutyActive);
   const offDutyAgents = agents.filter((a) => !getAgentDutyStatus(a).isDutyActive);
   const availableAgents = onDutyAgents;
@@ -209,96 +213,292 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {/* Tab 1: Tasks List */}
           {rightPanelTab === 'tasks' && (
-            <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-              {tasks.map((task) => {
-                const isSelected = task.id === selectedTaskId;
-                const assignedAgent = agents.find((a) => a.id === task.assignedAgentId);
+            <div className="space-y-3">
+              {/* Task Status Filter Segmented Control */}
+              <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100/90 rounded-lg text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTaskFilterTab('all')}
+                  className={`py-1.5 px-1 rounded-md font-semibold transition text-center flex items-center justify-center gap-1 ${
+                    taskFilterTab === 'all'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <span>All</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 font-mono font-bold">
+                    {tasks.length}
+                  </span>
+                </button>
 
-                return (
-                  <div
-                    key={task.id}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    className={`p-3.5 rounded-lg border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-50/60 border-blue-400 shadow-xs ring-1 ring-blue-400'
-                        : 'bg-slate-50/60 border-slate-200 hover:bg-slate-100/80'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-xs text-blue-700">
-                            {task.id}
+                <button
+                  type="button"
+                  onClick={() => setTaskFilterTab('unallocated')}
+                  className={`py-1.5 px-1 rounded-md font-semibold transition text-center flex items-center justify-center gap-1 ${
+                    taskFilterTab === 'unallocated'
+                      ? 'bg-white text-amber-900 shadow-xs border-b-2 border-amber-500 font-bold'
+                      : 'text-slate-600 hover:text-amber-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+                  <span className="truncate">Unallocated</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-mono font-bold">
+                    {unallocatedTasks.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTaskFilterTab('allocated')}
+                  className={`py-1.5 px-1 rounded-md font-semibold transition text-center flex items-center justify-center gap-1 ${
+                    taskFilterTab === 'allocated'
+                      ? 'bg-white text-blue-900 shadow-xs border-b-2 border-blue-500 font-bold'
+                      : 'text-slate-600 hover:text-blue-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                  <span className="truncate">Allocated</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-800 font-mono font-bold">
+                    {allocatedTasks.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTaskFilterTab('completed')}
+                  className={`py-1.5 px-1 rounded-md font-semibold transition text-center flex items-center justify-center gap-1 ${
+                    taskFilterTab === 'completed'
+                      ? 'bg-white text-emerald-900 shadow-xs border-b-2 border-emerald-500 font-bold'
+                      : 'text-slate-600 hover:text-emerald-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span className="truncate">Completed</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-mono font-bold">
+                    {completedTasks.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Tasks List Container */}
+              <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1">
+                {(() => {
+                  const renderCard = (task: Task) => {
+                    const isSelected = task.id === selectedTaskId;
+                    const assignedAgent = agents.find((a) => a.id === task.assignedAgentId);
+                    const isUnallocated = task.status === 'pending';
+                    const isAllocated = task.status === 'assigned' || task.status === 'in_progress';
+                    const isCompleted = task.status === 'completed';
+
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={() => setSelectedTaskId(task.id)}
+                        className={`p-3.5 rounded-lg border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-50/70 border-blue-400 shadow-xs ring-1 ring-blue-400'
+                            : isUnallocated
+                            ? 'bg-amber-50/20 border-slate-200 hover:bg-amber-50/40'
+                            : isAllocated
+                            ? 'bg-blue-50/20 border-slate-200 hover:bg-blue-50/40'
+                            : 'bg-slate-50/60 border-slate-200 hover:bg-slate-100/80'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-bold text-xs text-blue-700">
+                                {task.id}
+                              </span>
+                              <span
+                                className={`text-[10px] px-2 py-0.2 rounded font-semibold uppercase ${
+                                  task.priority === 'critical'
+                                    ? 'bg-red-100 text-red-700'
+                                    : task.priority === 'high'
+                                    ? 'bg-orange-100 text-orange-700'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {task.priority}
+                              </span>
+
+                              {/* Categorized Status Badge */}
+                              {isUnallocated && (
+                                <span className="text-[10px] px-2 py-0.2 rounded-full font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300">
+                                  Unallocated
+                                </span>
+                              )}
+                              {isAllocated && (
+                                <span className="text-[10px] px-2 py-0.2 rounded-full font-bold uppercase bg-blue-100 text-blue-800 border border-blue-300">
+                                  {task.status === 'in_progress' ? 'In Progress' : 'Allocated (Pending)'}
+                                </span>
+                              )}
+                              {isCompleted && (
+                                <span className="text-[10px] px-2 py-0.2 rounded-full font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Completed
+                                </span>
+                              )}
+                            </div>
+
+                            <h4 className="text-xs font-bold text-slate-900 mt-1.5 leading-snug">
+                              {task.title}
+                            </h4>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{task.description}</p>
+
+                        <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
+                          <div className="flex items-center gap-1 text-slate-600 font-medium truncate max-w-[170px]">
+                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate" title={task.location.addressName}>
+                              {task.location.addressName}
+                            </span>
+                          </div>
+
+                          {isUnallocated ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAllocationModalTask(task);
+                              }}
+                              className="px-3 py-1 rounded-md text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 transition shadow-xs shrink-0"
+                            >
+                              <Zap className="w-3.5 h-3.5" />
+                              <span>Allocate Task</span>
+                            </button>
+                          ) : isAllocated ? (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[11px] text-blue-700 font-medium truncate max-w-[130px]" title={assignedAgent?.name}>
+                                Assigned: <strong>{assignedAgent?.name || 'Agent'}</strong>
+                              </span>
+                              <button
+                                title="Reassign Work Order"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onReassignTask(task.id);
+                                }}
+                                className="p-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 transition"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium shrink-0">
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="truncate max-w-[150px]" title={assignedAgent?.name}>
+                                Resolved: <strong>{assignedAgent?.name || 'Completed'}</strong>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  };
+
+                  if (taskFilterTab === 'unallocated') {
+                    return unallocatedTasks.length === 0 ? (
+                      <div className="p-6 text-center text-slate-500 text-xs border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                        🎉 All work orders have been allocated! No pending orders.
+                      </div>
+                    ) : (
+                      unallocatedTasks.map(renderCard)
+                    );
+                  }
+
+                  if (taskFilterTab === 'allocated') {
+                    return allocatedTasks.length === 0 ? (
+                      <div className="p-6 text-center text-slate-500 text-xs border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                        No work orders currently allocated or in progress.
+                      </div>
+                    ) : (
+                      allocatedTasks.map(renderCard)
+                    );
+                  }
+
+                  if (taskFilterTab === 'completed') {
+                    return completedTasks.length === 0 ? (
+                      <div className="p-6 text-center text-slate-500 text-xs border border-dashed border-slate-200 rounded-lg bg-slate-50/50">
+                        No work orders marked as completed yet.
+                      </div>
+                    ) : (
+                      completedTasks.map(renderCard)
+                    );
+                  }
+
+                  // Default 'all' tab: Grouped presentation
+                  return (
+                    <div className="space-y-4">
+                      {/* Section 1: Unallocated */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-amber-900 bg-amber-50/80 px-2.5 py-1 rounded-md border border-amber-200">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                            Unallocated Work Orders
                           </span>
-                          <span
-                            className={`text-[10px] px-2 py-0.2 rounded font-semibold uppercase ${
-                              task.priority === 'critical'
-                                ? 'bg-red-100 text-red-700'
-                                : task.priority === 'high'
-                                ? 'bg-orange-100 text-orange-700'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}
-                          >
-                            {task.priority}
-                          </span>
-                          <span
-                            className={`text-[10px] px-2 py-0.2 rounded font-semibold uppercase ${
-                              task.status === 'pending'
-                                ? 'bg-amber-100 text-amber-800'
-                                : task.status === 'assigned'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            {task.status}
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-amber-200/80 rounded-full">
+                            {unallocatedTasks.length}
                           </span>
                         </div>
-                        <h4 className="text-xs font-bold text-slate-900 mt-1.5 leading-snug">
-                          {task.title}
-                        </h4>
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{task.description}</p>
-
-                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/80">
-                      <div className="flex items-center gap-1 text-slate-600 font-medium">
-                        <MapPin className="w-3 h-3 text-slate-400" />
-                        <span>{task.location.addressName}</span>
+                        {unallocatedTasks.length === 0 ? (
+                          <div className="p-3 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-md">
+                            No unallocated work orders.
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {unallocatedTasks.map(renderCard)}
+                          </div>
+                        )}
                       </div>
 
-                      {task.status === 'pending' ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setAllocationModalTask(task);
-                          }}
-                          className="px-3 py-1 rounded-md text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 transition shadow-xs"
-                        >
-                          <Zap className="w-3.5 h-3.5" />
-                          <span>Allocate Task</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-emerald-700 font-medium">
-                            Assigned: <strong>{assignedAgent?.name || 'Agent'}</strong>
+                      {/* Section 2: Allocated / Pending */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-blue-900 bg-blue-50/80 px-2.5 py-1 rounded-md border border-blue-200">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                            Allocated & In-Progress
                           </span>
-                          <button
-                            title="Reassign"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onReassignTask(task.id);
-                            }}
-                            className="p-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                          </button>
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-blue-200/80 rounded-full">
+                            {allocatedTasks.length}
+                          </span>
                         </div>
-                      )}
+                        {allocatedTasks.length === 0 ? (
+                          <div className="p-3 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-md">
+                            No active allocated tasks.
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {allocatedTasks.map(renderCard)}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Section 3: Completed */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-emerald-900 bg-emerald-50/80 px-2.5 py-1 rounded-md border border-emerald-200">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            Completed Work Orders
+                          </span>
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-emerald-200/80 rounded-full">
+                            {completedTasks.length}
+                          </span>
+                        </div>
+                        {completedTasks.length === 0 ? (
+                          <div className="p-3 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-md">
+                            No completed work orders yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {completedTasks.map(renderCard)}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })()}
+              </div>
             </div>
           )}
 
