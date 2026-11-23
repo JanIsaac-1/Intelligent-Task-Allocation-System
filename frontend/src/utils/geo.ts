@@ -60,9 +60,31 @@ export async function reverseGeocodeLocation(lat: number, lng: number): Promise<
     return geocodeCache.get(cacheKey)!;
   }
 
+  // Primary: Photon (OpenStreetMap data without strict 1 req/sec 429 browser ban)
+  try {
+    const photonRes = await fetch(
+      `https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}`
+    );
+    if (photonRes.ok) {
+      const pData = await photonRes.json();
+      const props = pData?.features?.[0]?.properties;
+      if (props) {
+        const parts = [props.street || props.name, props.locality || props.district, props.city || props.state].filter(Boolean);
+        const unique = Array.from(new Set(parts));
+        if (unique.length > 0) {
+          const finalName = unique.slice(0, 3).join(', ');
+          geocodeCache.set(cacheKey, finalName);
+          return finalName;
+        }
+      }
+    }
+  } catch {
+    // Fall through to Nominatim
+  }
+
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
     );
     if (res.ok) {
       const data = await res.json();
@@ -75,10 +97,26 @@ export async function reverseGeocodeLocation(lat: number, lng: number): Promise<
       }
     }
   } catch {
-    // Network or rate-limit failure: gracefully fall back to coordinates
+    // Fall through to BigDataCloud
   }
 
-  const fallback = 'Nairobi Metro';
-  geocodeCache.set(cacheKey, fallback);
-  return fallback;
+  try {
+    const bdcRes = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
+    );
+    if (bdcRes.ok) {
+      const data = await bdcRes.json();
+      const parts = [data.locality, data.city, data.principalSubdivision].filter(Boolean);
+      const unique = Array.from(new Set(parts));
+      if (unique.length > 0) {
+        const finalName = unique.join(', ');
+        geocodeCache.set(cacheKey, finalName);
+        return finalName;
+      }
+    }
+  } catch {
+    // Network failure: gracefully fall back to coordinates
+  }
+
+  return `Pinned Site (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
 }

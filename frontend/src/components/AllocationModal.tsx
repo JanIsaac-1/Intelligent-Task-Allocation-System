@@ -10,7 +10,7 @@ interface AllocationModalProps {
   agents: AgentProfile[];
   weights: AllocationWeights;
   onWeightsChange: (weights: AllocationWeights) => void;
-  onAssign: (taskId: string, agentId: string, compositeScore: number) => void;
+  onAssign: (taskId: string, agentId: string, compositeScore: number, breakdown?: { sSkill: number; sProx: number; sWork: number }) => void;
   onClose: () => void;
 }
 
@@ -158,9 +158,6 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-900">Task Allocation Engine</h3>
-                <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono font-bold">
-                  {task.id}
-                </span>
                 <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium border border-emerald-300">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                   Fine-Tuned SBERT Active
@@ -524,7 +521,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
               disabled={!chosenCandidate}
               onClick={() => {
                 if (chosenCandidate) {
-                  onAssign(task.id, chosenCandidate.agentId, chosenCandidate.compositeScore);
+                  onAssign(task.id, chosenCandidate.agentId, chosenCandidate.compositeScore, { sSkill: chosenCandidate.skillScore, sProx: chosenCandidate.proximityScore, sWork: chosenCandidate.workloadScore });
                 }
               }}
               className="px-4 py-1.5 rounded-md text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-xs transition disabled:opacity-50"

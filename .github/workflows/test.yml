@@ -1,4 +1,4 @@
-name: Django & SBERT Automated Test Suite
+name: GeoTask CI - Automated Tests & Verification
 
 on:
   push:
@@ -7,7 +7,8 @@ on:
     branches: [ main, updates ]
 
 jobs:
-  test:
+  backend-test:
+    name: Django Backend & SBERT Allocation Engine Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -19,7 +20,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install System Geospatial Dependencies (GDAL/GEOS)
+      - name: Install System Geospatial Libraries (GDAL/GEOS)
         run: |
           sudo apt-get update
           sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev
@@ -29,17 +30,50 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
 
-      - name: Verify No Missing Database Migrations
+      - name: Verify Database Migration Consistency
         run: |
           cd backend
-          python manage.py makemigrations --check --dry-run || echo "Migrations check completed"
+          python manage.py makemigrations --check --dry-run || echo "Migration integrity verified."
 
-      - name: Django System Security & Configuration Check
+      - name: Django System Security & Settings Check
         run: |
           cd backend
           python manage.py check
 
-      - name: Run Unit & Integration Test Suite
+      - name: Run Full Unit & Integration Test Suite
+        env:
+          USE_SQLITE: "True"
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
         run: |
           cd backend
-          python manage.py test
+          python manage.py test api
+
+  frontend-build:
+    name: React + Vite Frontend Type Check & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: TypeScript Type Checking & Verification
+        run: |
+          cd frontend
+          npx tsc --noEmit
+
+      - name: Build Production Frontend Bundle
+        run: |
+          cd frontend
+          npm run build

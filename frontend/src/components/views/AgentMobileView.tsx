@@ -308,7 +308,7 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                        Task #{activeTask.id}
+                        Active Work Order
                       </span>
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
@@ -492,7 +492,7 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                 queueTasks.map((t) => (
                   <div key={t.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-bold text-slate-700">Task #{t.id}</span>
+                      <span className="text-xs font-semibold text-blue-700 truncate max-w-[180px]">{t.category}</span>
                       <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-slate-100 text-slate-700">
                         {t.priority} Priority
                       </span>
@@ -530,7 +530,7 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                   <div key={t.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono font-bold text-slate-700">Task #{t.id}</span>
+                        <span className="text-xs font-semibold text-blue-700 truncate max-w-[180px]">{t.category}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
                           Resolved
                         </span>

@@ -107,15 +107,17 @@ export const App: React.FC = () => {
           setLogs(backendLogs);
         }
 
-        // Asynchronously resolve physical address names for technicians
+        // Asynchronously resolve physical address names only for technicians missing a saved street address
         if (backendAgents && backendAgents.length > 0) {
           backendAgents.forEach(async (ag) => {
-            if (ag.currentLocation?.lat && ag.currentLocation?.lng) {
+            const existingAddr = (ag.currentLocation?.addressName || '').trim();
+            const needsGeocode = !existingAddr || existingAddr === 'Nairobi Metro' || existingAddr === 'Unknown Location';
+            if (needsGeocode && ag.currentLocation?.lat && ag.currentLocation?.lng) {
               const realAddr = await reverseGeocodeLocation(
                 ag.currentLocation.lat,
                 ag.currentLocation.lng
               );
-              if (isMounted) {
+              if (isMounted && realAddr && !realAddr.startsWith('Site (')) {
                 setAgents((prev) =>
                   prev.map((a) =>
                     a.id === ag.id
@@ -146,13 +148,18 @@ export const App: React.FC = () => {
 
     hydrateFromBackend();
 
-    // Background polling every 10 seconds to sync live GPS telemetry across dispatch and agents
+    // Background polling every 10 seconds to sync live GPS telemetry, users, and work orders
     const pollTimer = setInterval(async () => {
       try {
-        const freshAgents = await fetchAgents();
-        if (isMounted && freshAgents && freshAgents.length > 0) {
-          setAgents(freshAgents);
-        }
+        const [freshAgents, freshUsers, freshTasks] = await Promise.all([
+          fetchAgents(),
+          fetchUsers(),
+          fetchTasks(),
+        ]);
+        if (!isMounted) return;
+        if (freshAgents && freshAgents.length > 0) setAgents(freshAgents);
+        if (freshUsers) setSystemUsers(freshUsers);
+        if (freshTasks) setTasks(freshTasks);
       } catch (err) {
         // background poll failure is non-critical
       }
@@ -163,6 +170,15 @@ export const App: React.FC = () => {
       clearInterval(pollTimer);
     };
   }, []);
+
+  // Refresh users list immediately whenever switching into Admin Portal or Dashboard
+  useEffect(() => {
+    if (activeTab === 'admin-portal' || activeTab === 'admin') {
+      fetchUsers().then((users) => {
+        if (users) setSystemUsers(users);
+      }).catch(() => {});
+    }
+  }, [activeTab]);
 
   // Handle successful login
   const handleLoginSuccess = (user: AuthUser, agentProfileId?: number | string) => {
@@ -190,6 +206,15 @@ export const App: React.FC = () => {
       `${user.fullName} signed in as '${user.role.toUpperCase()}'.`,
       'success'
     );
+
+    // Refresh users, tasks, and agents immediately upon login so pending approvals are current
+    Promise.all([fetchUsers(), fetchTasks(), fetchAgents()])
+      .then(([freshUsers, freshTasks, freshAgents]) => {
+        if (freshUsers) setSystemUsers(freshUsers);
+        if (freshTasks) setTasks(freshTasks);
+        if (freshAgents && freshAgents.length > 0) setAgents(freshAgents);
+      })
+      .catch(() => {});
   };
 
   // Handle logout
@@ -203,7 +228,7 @@ export const App: React.FC = () => {
   };
 
   // Handle task assignment by allocation engine or admin override
-  const handleAssignTask = (taskId: string, agentId: string, score: number) => {
+  const handleAssignTask = (taskId: string, agentId: string, score: number, breakdown?: { sSkill: number; sProx: number; sWork: number }) => {
     const targetTask = tasks.find((t) => t.id === taskId);
     const targetAgent = agents.find((a) => a.id === agentId);
     if (!targetTask || !targetAgent) return;
@@ -229,13 +254,13 @@ export const App: React.FC = () => {
 
     addLog(
       'Task Dispatched',
-      `${targetTask.id} (${targetTask.category}) assigned to ${targetAgent.name} (Score: ${(score * 100).toFixed(1)}%).`,
+      `'${targetTask.title}' (${targetTask.category}) assigned to ${targetAgent.name} (Score: ${(score * 100).toFixed(1)}%).`,
       'success'
     );
 
     // Sync with PostgreSQL backend
     if (!isNaN(Number(taskId)) && !isNaN(Number(agentId))) {
-      assignAgentToTask(taskId, agentId, score).catch((err) =>
+      assignAgentToTask(taskId, agentId, score, breakdown).catch((err) =>
         console.warn('Backend assignAgentToTask sync error:', err)
       );
     }
@@ -269,7 +294,7 @@ export const App: React.FC = () => {
 
     addLog(
       'Task Reset',
-      `${targetTask.id} moved back to pending dispatch queue by administrator.`,
+      `'${targetTask.title}' moved back to pending dispatch queue by administrator.`,
       'warning'
     );
 
@@ -307,13 +332,13 @@ export const App: React.FC = () => {
 
       addLog(
         'Task Resolved',
-        `${targetTask.id} marked as COMPLETED by field technician.`,
+        `'${targetTask.title}' marked as COMPLETED by field technician.`,
         'success'
       );
     } else {
       addLog(
         'Status Updated',
-        `${targetTask.id} transitioned to '${status.toUpperCase()}'.`,
+        `'${targetTask.title}' transitioned to '${status.toUpperCase()}'.`,
         'info'
       );
     }
@@ -482,15 +507,15 @@ export const App: React.FC = () => {
   };
 
   // Create new task
-  const handleCreateTask = async (newTask: Task) => {
+  const handleCreateTask = async (newTask: Task): Promise<Task> => {
     setTasks((prev) => [newTask, ...prev]);
     addLog(
       'Task Submitted',
-      `New request ${newTask.id} (${newTask.title}) received from ${newTask.requesterName}.`,
+      `New request '${newTask.title}' received from ${newTask.requesterName || 'Requester'}.`,
       'info'
     );
 
-    // Sync with PostgreSQL backend
+    // Sync with PostgreSQL backend & retrieve SBERT auto-detected domain/skills
     try {
       const saved = await createTask({
         title: newTask.title,
@@ -503,12 +528,20 @@ export const App: React.FC = () => {
         addressName: newTask.location.addressName,
       });
 
-      // Update the temporary ID with PostgreSQL ID
+      const syncedTask: Task = {
+        ...newTask,
+        id: String(saved.id),
+        category: saved.category || newTask.category,
+        requiredSkills: saved.requiredSkills?.length ? saved.requiredSkills : newTask.requiredSkills,
+      };
+
       setTasks((prev) =>
-        prev.map((t) => (t.id === newTask.id ? { ...t, id: String(saved.id) } : t))
+        prev.map((t) => (t.id === newTask.id ? syncedTask : t))
       );
+      return syncedTask;
     } catch (err) {
       console.warn('Could not persist task to backend, keeping local state:', err);
+      return newTask;
     }
   };
 
@@ -682,7 +715,16 @@ export const App: React.FC = () => {
 
   // If user is not authenticated, render LoginView
   if (!currentUser) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <LoginView
+        onLoginSuccess={handleLoginSuccess}
+        onRegistered={() => {
+          fetchUsers().then((users) => {
+            if (users) setSystemUsers(users);
+          }).catch(() => {});
+        }}
+      />
+    );
   }
 
   return (

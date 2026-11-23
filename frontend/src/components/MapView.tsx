@@ -321,7 +321,7 @@ export const MapView: React.FC<MapViewProps> = ({
               <Popup>
                 <div className="p-1 min-w-[220px] text-slate-900">
                   <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                    <span className="font-bold text-xs text-blue-700 font-mono">{task.id}</span>
+                    <span className="font-bold text-xs text-blue-700">Work Order</span>
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
                         task.priority === 'critical'

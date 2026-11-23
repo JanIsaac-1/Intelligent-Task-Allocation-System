@@ -25,7 +25,7 @@ interface AdminDashboardProps {
   tasks: Task[];
   weights: AllocationWeights;
   onWeightsChange: (weights: AllocationWeights) => void;
-  onAssignTask: (taskId: string, agentId: string, score: number) => void;
+  onAssignTask: (taskId: string, agentId: string, score: number, breakdown?: { sSkill: number; sProx: number; sWork: number }) => void;
   onAddAgent: (agent: AgentProfile) => void;
   onUpdateAgent?: (updatedAgent: AgentProfile) => Promise<void> | void;
   onToggleAgentAvailability: (agentId: string) => void;
@@ -307,9 +307,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono font-bold text-xs text-blue-700">
-                                {task.id}
-                              </span>
                               <span
                                 className={`text-[10px] px-2 py-0.2 rounded font-semibold uppercase ${
                                   task.priority === 'critical'
@@ -633,8 +630,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           agents={agents}
           weights={weights}
           onWeightsChange={onWeightsChange}
-          onAssign={(taskId, agentId, score) => {
-            onAssignTask(taskId, agentId, score);
+          onAssign={(taskId, agentId, score, breakdown) => {
+            onAssignTask(taskId, agentId, score, breakdown);
             setAllocationModalTask(null);
           }}
           onClose={() => setAllocationModalTask(null)}

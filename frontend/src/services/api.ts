@@ -1,4 +1,4 @@
-import { AgentProfile, Task, AllocationWeights, AuthUser, SystemUser, SystemLog } from '../types';
+import { AgentProfile, Task, AllocationWeights, AuthUser, SystemUser, SystemLog, AnalyticsSummary } from '../types';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -240,13 +240,19 @@ export async function rankCandidates(
 export async function assignAgentToTask(
   taskId: string | number,
   agentId: string | number,
-  score: number
+  score: number,
+  breakdown?: { sSkill: number; sProx: number; sWork: number }
 ): Promise<any> {
   return request(`/tasks/${taskId}/assign_agent/`, {
     method: 'POST',
     body: JSON.stringify({
       agent_id: agentId,
       score: score,
+      ...(breakdown ? {
+        s_skill: breakdown.sSkill,
+        s_prox: breakdown.sProx,
+        s_work: breakdown.sWork,
+      } : {}),
     }),
   });
 }
@@ -426,6 +432,15 @@ export async function fetchLogs(): Promise<SystemLog[]> {
   } catch (err) {
     console.warn('Failed to fetch logs from backend:', err);
     return [];
+  }
+}
+
+export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary | null> {
+  try {
+    return await request<AnalyticsSummary>('/analytics/summary/');
+  } catch (err) {
+    console.warn('Failed to fetch analytics summary from backend:', err);
+    return null;
   }
 }
 

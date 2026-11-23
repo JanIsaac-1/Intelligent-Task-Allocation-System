@@ -12,7 +12,12 @@ from .serializers import (
     UserSerializer, AgentProfileSerializer, TaskSerializer,
     AssignmentSerializer, LocationLogSerializer, PerformanceLogSerializer
 )
-from .allocation import rank_candidates_for_task
+from .allocation import (
+    rank_candidates_for_task,
+    infer_task_domain_and_skills,
+    calculate_haversine_distance,
+    GENERIC_CATEGORIES,
+)
 
 # ==============================================================================
 # AUTHENTICATION & SESSION VIEWS
@@ -405,6 +410,24 @@ class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all().order_by('-created_at')
     serializer_class = TaskSerializer
 
+    def perform_create(self, serializer):
+        """Automatically infer domain and required skills via SBERT when not supplied by requester."""
+        raw_cat = (serializer.validated_data.get('category') or '').strip()
+        raw_skills = serializer.validated_data.get('required_skills') or []
+        title = serializer.validated_data.get('title', '')
+        description = serializer.validated_data.get('description', '')
+
+        if raw_cat.lower() in GENERIC_CATEGORIES:
+            inferred_domain, inferred_skills = infer_task_domain_and_skills(
+                title, description, AgentProfile.objects.all()
+            )
+            serializer.save(
+                category=inferred_domain,
+                required_skills=raw_skills if raw_skills else inferred_skills
+            )
+        else:
+            serializer.save()
+
     @action(detail=True, methods=['post'])
     def rank_candidates(self, request, pk=None):
         """
@@ -493,6 +516,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             prev_agent.availability = 'available'
             prev_agent.save()
 
+            Assignment.objects.filter(task=task).exclude(status__in=['completed', 'cancelled']).update(status='cancelled')
             task.assigned_agent = None
             task.status = 'pending'
             task.save()
@@ -500,6 +524,9 @@ class TaskViewSet(viewsets.ModelViewSet):
             PerformanceLog.objects.create(
                 agent=prev_agent,
                 action='Task Reset',
+
+
+
                 details=f"Task '{task.title}' returned to pending dispatch pool by administrator.",
                 log_type='warning'
             )
@@ -520,6 +547,11 @@ class TaskViewSet(viewsets.ModelViewSet):
                 agent = task.assigned_agent
                 agent.active_task_count = max(0, agent.active_task_count - 1)
                 agent.completed_tasks_count += 1
+                active_assignment = Assignment.objects.filter(task=task, agent=agent).exclude(status='cancelled').order_by('-assigned_at').first()
+                if active_assignment:
+                    active_assignment.status = 'completed'
+                    active_assignment.completed_at = timezone.now()
+                    active_assignment.save()
                 agent.availability = 'available'
                 agent.save()
 
@@ -596,8 +628,151 @@ def parse_cv_pdf(request):
 # AUDIT & PERFORMANCE LOGS VIEWSET
 # ==============================================================================
 class PerformanceLogViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = PerformanceLog.objects.all().order_by('-recorded_at')[:50]
+    queryset = PerformanceLog.objects.all().order_by('-recorded_at')
     serializer_class = PerformanceLogSerializer
+
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()[:100]
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+# ==============================================================================
+# LIVE ANALYTICS & AUDIT REPORT ENDPOINT
+# ==============================================================================
+@api_view(['GET'])
+def analytics_summary(request):
+    """Computes live dispatch, SBERT alignment, distance savings, fairness, and domain stats."""
+    tasks = list(Task.objects.all())
+    agents = list(AgentProfile.objects.select_related('user').all())
+    assignments = list(
+        Assignment.objects.select_related('task', 'agent', 'agent__user')
+        .exclude(status='cancelled')
+        .order_by('-assigned_at')
+    )
+
+    total_tasks = len(tasks)
+    pending_tasks = sum(1 for t in tasks if t.status == 'pending')
+    assigned_tasks = sum(1 for t in tasks if t.status == 'assigned')
+    in_progress_tasks = sum(1 for t in tasks if t.status == 'in_progress')
+    completed_tasks = sum(1 for t in tasks if t.status == 'completed')
+    completion_rate_pct = round((completed_tasks / total_tasks) * 100, 1) if total_tasks else 0.0
+
+    # Jain's Fairness Index across total agent load (active + completed)
+    loads = [(a.active_task_count + a.completed_tasks_count) for a in agents]
+    sum_loads = sum(loads)
+    sum_sq = sum(x * x for x in loads)
+    fairness_index = round((sum_loads ** 2) / (len(agents) * sum_sq), 2) if (agents and sum_sq > 0) else 1.0
+
+    total_assignments = len(assignments)
+    if total_assignments > 0:
+        avg_composite_score = round(sum(a.allocation_score for a in assignments) / total_assignments, 4)
+        avg_skill_score = round(sum(a.skill_score for a in assignments) / total_assignments, 4)
+        avg_proximity_score = round(sum(a.proximity_score for a in assignments) / total_assignments, 4)
+        avg_workload_score = round(sum(a.workload_score for a in assignments) / total_assignments, 4)
+    else:
+        avg_composite_score = None
+        avg_skill_score = None
+        avg_proximity_score = None
+        avg_workload_score = None
+
+    assigned_distances = []
+    baseline_distances = []
+    completion_durations_min = []
+    recent_assignments = []
+
+    for idx, asg in enumerate(assignments):
+        dist_km = calculate_haversine_distance(
+            asg.task.target_lat, asg.task.target_lng,
+            asg.agent.current_lat, asg.agent.current_lng,
+        )
+        assigned_distances.append(dist_km)
+
+        if agents:
+            fleet_avg = sum(
+                calculate_haversine_distance(
+                    asg.task.target_lat, asg.task.target_lng,
+                    ag.current_lat, ag.current_lng,
+                )
+                for ag in agents
+            ) / len(agents)
+            baseline_distances.append(fleet_avg)
+
+        if asg.completed_at and asg.assigned_at:
+            diff_min = max(0.1, (asg.completed_at - asg.assigned_at).total_seconds() / 60.0)
+            completion_durations_min.append(diff_min)
+
+        if idx < 15:
+            recent_assignments.append({
+                'id': asg.id,
+                'task_id': asg.task.id,
+                'task_title': asg.task.title,
+                'task_category': asg.task.category,
+                'task_status': asg.task.status,
+                'agent_name': asg.agent.user.full_name,
+                'agent_domain': asg.agent.domain,
+                'allocation_score': round(asg.allocation_score, 4),
+                'skill_score': round(asg.skill_score, 4),
+                'proximity_score': round(asg.proximity_score, 4),
+                'workload_score': round(asg.workload_score, 4),
+                'distance_km': dist_km,
+                'status': asg.status,
+                'assigned_at': asg.assigned_at.isoformat(),
+                'completed_at': asg.completed_at.isoformat() if asg.completed_at else None,
+            })
+
+    avg_dispatch_distance_km = round(sum(assigned_distances) / len(assigned_distances), 2) if assigned_distances else None
+    avg_baseline_distance_km = round(sum(baseline_distances) / len(baseline_distances), 2) if baseline_distances else None
+    if avg_dispatch_distance_km is not None and avg_baseline_distance_km and avg_baseline_distance_km > 0:
+        distance_optimization_pct = round(
+            ((avg_dispatch_distance_km - avg_baseline_distance_km) / avg_baseline_distance_km) * 100, 1
+        )
+    else:
+        distance_optimization_pct = None
+
+    avg_response_minutes = (
+        round(sum(completion_durations_min) / len(completion_durations_min), 1)
+        if completion_durations_min
+        else None
+    )
+
+    domain_counts = {}
+    for t in tasks:
+        cat = t.category or 'General Field Service'
+        if cat not in domain_counts:
+            domain_counts[cat] = {'domain': cat, 'total': 0, 'pending': 0, 'active': 0, 'completed': 0}
+        domain_counts[cat]['total'] += 1
+        if t.status == 'pending':
+            domain_counts[cat]['pending'] += 1
+        elif t.status in ('assigned', 'in_progress'):
+            domain_counts[cat]['active'] += 1
+        elif t.status == 'completed':
+            domain_counts[cat]['completed'] += 1
+
+    domain_breakdown = sorted(domain_counts.values(), key=lambda x: x['total'], reverse=True)
+
+    return Response({
+        'total_tasks': total_tasks,
+        'pending_tasks': pending_tasks,
+        'assigned_tasks': assigned_tasks,
+        'in_progress_tasks': in_progress_tasks,
+        'completed_tasks': completed_tasks,
+        'completion_rate_pct': completion_rate_pct,
+        'total_assignments': total_assignments,
+        'avg_composite_score': avg_composite_score,
+        'avg_skill_score': avg_skill_score,
+        'avg_proximity_score': avg_proximity_score,
+        'avg_workload_score': avg_workload_score,
+        'avg_dispatch_distance_km': avg_dispatch_distance_km,
+        'avg_baseline_distance_km': avg_baseline_distance_km,
+        'distance_optimization_pct': distance_optimization_pct,
+        'avg_response_minutes': avg_response_minutes,
+        'fairness_index': fairness_index,
+        'recent_assignments': recent_assignments,
+        'domain_breakdown': domain_breakdown,
+    })
+
 
 
 # ==============================================================================

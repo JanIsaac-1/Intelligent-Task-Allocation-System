@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Task, TaskPriority } from '../../types';
-import { MASTER_DOMAINS } from '../../data/config';
+import { reverseGeocodeLocation } from '../../utils/geo';
 import {
   Send,
   MapPin,
@@ -58,11 +58,14 @@ function MapCenterController({ center }: { center: [number, number] }) {
     return () => clearTimeout(timer);
   }, [map]);
 
+  const targetLat = center?.[0];
+  const targetLng = center?.[1];
+
   useEffect(() => {
-    if (center && !isNaN(center[0]) && !isNaN(center[1])) {
-      map.setView(center, map.getZoom(), { animate: true });
+    if (targetLat !== undefined && targetLng !== undefined && !isNaN(targetLat) && !isNaN(targetLng)) {
+      map.setView([targetLat, targetLng], map.getZoom(), { animate: true });
     }
-  }, [center, map]);
+  }, [targetLat, targetLng, map]);
 
   return null;
 }
@@ -81,7 +84,7 @@ function MapClickHandler({ onSelect }: { onSelect: (lat: number, lng: number) =>
 }
 
 interface TaskRequesterViewProps {
-  onCreateTask: (task: Task) => void;
+  onCreateTask: (task: Task) => Promise<Task | void> | void;
   onNavigateToAdmin: () => void;
 }
 
@@ -91,9 +94,8 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<Task['category']>(MASTER_DOMAINS[0].domain);
-  const [requiredSkillsText, setRequiredSkillsText] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('high');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Location State (defaults to Nairobi center coordinates)
   const [lat, setLat] = useState<number>(-1.2921);
@@ -111,21 +113,10 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
 
   // Reverse geocode to resolve human-readable address from coordinates
   const reverseGeocode = async (targetLat: number, targetLng: number) => {
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${targetLat}&lon=${targetLng}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.display_name) {
-          const parts = data.display_name.split(',');
-          const concise = parts.slice(0, 3).join(',').trim();
-          setAddressName(concise || data.display_name);
-        }
-      }
-    } catch {
-      // offline or rate limited fallback: keep current address
-    }
+    const coordLabel = `Pinned Site (${targetLat.toFixed(4)}, ${targetLng.toFixed(4)})`;
+    setAddressName(coordLabel);
+    const resolved = await reverseGeocodeLocation(targetLat, targetLng);
+    setAddressName(resolved);
   };
 
   // Handler when map is clicked
@@ -163,7 +154,7 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
     }
   };
 
-  // Handler for Address Search (Nominatim)
+  // Handler for Address Search (Nominatim with Photon fallback)
   const handleAddressSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -174,28 +165,53 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
         ? searchQuery
         : `${searchQuery}, Nairobi, Kenya`;
 
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          queryWithCountry
-        )}&limit=1`
-      );
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            queryWithCountry
+          )}&limit=1`
+        );
 
-      if (res.ok) {
-        const results = await res.json();
-        if (results && results.length > 0) {
-          const item = results[0];
-          const newLat = parseFloat(parseFloat(item.lat).toFixed(5));
-          const newLng = parseFloat(parseFloat(item.lon).toFixed(5));
+        if (res.ok) {
+          const results = await res.json();
+          if (results && results.length > 0) {
+            const item = results[0];
+            const newLat = parseFloat(parseFloat(item.lat).toFixed(5));
+            const newLng = parseFloat(parseFloat(item.lon).toFixed(5));
+            setLat(newLat);
+            setLng(newLng);
+            const parts = item.display_name.split(',');
+            const concise = parts.slice(0, 3).join(',').trim();
+            setAddressName(concise || item.display_name);
+            setGpsStatusMessage(`Found location: ${concise}`);
+            return;
+          }
+        }
+      } catch {
+        // Fall through to Photon
+      }
+
+      const photonRes = await fetch(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(queryWithCountry)}&limit=1`
+      );
+      if (photonRes.ok) {
+        const pData = await photonRes.json();
+        const feat = pData?.features?.[0];
+        if (feat?.geometry?.coordinates) {
+          const newLng = parseFloat(Number(feat.geometry.coordinates[0]).toFixed(5));
+          const newLat = parseFloat(Number(feat.geometry.coordinates[1]).toFixed(5));
+          const props = feat.properties || {};
+          const parts = [props.name || props.street, props.locality || props.district, props.city || props.state].filter(Boolean);
+          const concise = Array.from(new Set(parts)).slice(0, 3).join(', ') || searchQuery;
           setLat(newLat);
           setLng(newLng);
-          const parts = item.display_name.split(',');
-          const concise = parts.slice(0, 3).join(',').trim();
-          setAddressName(concise || item.display_name);
+          setAddressName(concise);
           setGpsStatusMessage(`Found location: ${concise}`);
-        } else {
-          setGpsStatusMessage('No matching place found. Try another landmark or click on the map.');
+          return;
         }
       }
+
+      setGpsStatusMessage('No matching place found. Try another landmark or click on the map.');
     } catch {
       setGpsStatusMessage('Search failed. Check your internet connection.');
     } finally {
@@ -203,20 +219,19 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !description) return;
+    if (!title || !description || isSubmitting) return;
 
+    setIsSubmitting(true);
     const finalAddress = addressName.trim() || `Site Coordinates (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
 
     const newTask: Task = {
       id: `TASK-${Math.floor(100 + Math.random() * 900)}`,
       title,
       description,
-      category,
-      requiredSkills: requiredSkillsText
-        ? requiredSkillsText.split(',').map((s) => s.trim()).filter(Boolean)
-        : [category],
+      category: '',
+      requiredSkills: [],
       location: {
         lat,
         lng,
@@ -231,8 +246,12 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
       estimatedHours: 2.0,
     };
 
-    onCreateTask(newTask);
-    setSubmittedTask(newTask);
+    try {
+      const saved = await onCreateTask(newTask);
+      setSubmittedTask(saved || newTask);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -262,8 +281,13 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                 Work Order Created Successfully
               </h3>
               <p className="text-xs text-slate-600 mt-1">
-                Order <strong className="font-mono text-slate-900">{submittedTask.id}</strong> has been logged in the dispatch queue.
+                Work order <strong className="text-slate-900">&ldquo;{submittedTask.title}&rdquo;</strong> has been logged in the dispatch queue.
               </p>
+              {submittedTask.category && submittedTask.category !== 'General Field Service' && (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-[11px] text-blue-800 font-semibold">
+                  <span>AI-Detected Trade Domain: {submittedTask.category}</span>
+                </div>
+              )}
               <div className="mt-2 text-xs text-slate-600 flex items-center justify-center gap-1.5 font-medium">
                 <MapPin className="w-3.5 h-3.5 text-blue-600" />
                 <span>
@@ -278,7 +302,6 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                   setSubmittedTask(null);
                   setTitle('');
                   setDescription('');
-                  setRequiredSkillsText('');
                   setAddressName('');
                   setRequesterName('');
                   setRequesterPhone('');
@@ -315,107 +338,37 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
 
             {/* Description */}
             <div>
-              <label className="text-slate-700 font-semibold mb-1 block">
-                Problem Description (Free Text)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-700 font-semibold block">
+                  Problem Description (Free Text)
+                </label>
+                <span className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                  AI Auto-Detects Trade & Skills
+                </span>
+              </div>
               <textarea
                 rows={3}
                 required
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe the issue, symptoms, and required equipment. The system will match this with technician profiles..."
+                placeholder="Describe what happened in plain words (e.g., symptoms, equipment, error lights). Our NLP model automatically matches the right specialist..."
                 className="w-full bg-white border border-slate-300 rounded-md p-2.5 text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               />
             </div>
 
-            {/* Category & Priority */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-700 font-semibold block">Service Domain</label>
-                  <span className="text-[11px] text-blue-600 font-semibold">22 Specialized Domains</span>
-                </div>
-                <select
-                  value={category}
-                  onChange={(e) => {
-                    const selected = e.target.value;
-                    setCategory(selected);
-                    const domObj = MASTER_DOMAINS.find(d => d.domain === selected);
-                    if (domObj && !requiredSkillsText.trim()) {
-                      setRequiredSkillsText(domObj.skills.slice(0, 3).join(', '));
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium text-xs sm:text-sm"
-                >
-                  {MASTER_DOMAINS.map((dom) => (
-                    <option key={dom.code} value={dom.domain}>
-                      [{dom.code}] {dom.domain}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-700 font-semibold mb-1 block">Priority Level</label>
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as any)}
-                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium text-xs sm:text-sm"
-                >
-                  <option value="critical">Critical (Immediate Emergency)</option>
-                  <option value="high">High (Service Disruption)</option>
-                  <option value="medium">Medium (Standard Routine)</option>
-                  <option value="low">Low (Preventive Scheduled)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Skills with Quick Clickable Chips */}
+            {/* Priority Level */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-slate-700 font-semibold block">
-                  Required Competencies (comma-separated)
-                </label>
-                <span className="text-[10px] text-slate-400">Click chips below to add</span>
-              </div>
-              <input
-                type="text"
-                value={requiredSkillsText}
-                onChange={(e) => setRequiredSkillsText(e.target.value)}
-                placeholder="e.g. Fiber optic cable fusion splicing, OTDR fault trace analysis"
-                className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 text-xs sm:text-sm"
-              />
-
-              {/* Dynamic Domain Skills Badges */}
-              {(() => {
-                const activeDom = MASTER_DOMAINS.find(d => d.domain === category);
-                if (!activeDom) return null;
-                return (
-                  <div className="mt-2 flex flex-wrap gap-1.5 items-center">
-                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Suggested:</span>
-                    {activeDom.skills.map((skill, sIdx) => {
-                      const isSelected = requiredSkillsText.toLowerCase().includes(skill.toLowerCase());
-                      return (
-                        <button
-                          key={sIdx}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) return;
-                            setRequiredSkillsText(prev => prev ? `${prev}, ${skill}` : skill);
-                          }}
-                          className={`text-[10px] px-2 py-0.5 rounded-full border transition font-medium ${
-                            isSelected
-                              ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold cursor-default'
-                              : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400 hover:bg-blue-50'
-                          }`}
-                        >
-                          {isSelected ? `✓ ${skill}` : `+ ${skill}`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+              <label className="text-slate-700 font-semibold mb-1 block">Priority Level</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as any)}
+                className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-900 focus:outline-none focus:border-blue-600 font-medium text-xs sm:text-sm"
+              >
+                <option value="critical">Critical (Immediate Emergency)</option>
+                <option value="high">High (Service Disruption)</option>
+                <option value="medium">Medium (Standard Routine)</option>
+                <option value="low">Low (Preventive Scheduled)</option>
+              </select>
             </div>
 
             {/* ============================================================ */}
@@ -536,10 +489,9 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
                   </label>
                   <input
                     type="text"
-                    required
                     value={addressName}
                     onChange={(e) => setAddressName(e.target.value)}
-                    placeholder="e.g. Hospital Road, Upper Hill or Waiyaki Way, Westlands"
+                    placeholder="Auto-filled on map click or type landmark (e.g. Waiyaki Way, Westlands)"
                     className="w-full bg-white border border-slate-300 rounded-md p-1.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600"
                   />
                 </div>
@@ -597,10 +549,11 @@ export const TaskRequesterView: React.FC<TaskRequesterViewProps> = ({
             <div className="pt-2 flex justify-end">
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-md font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-xs transition text-xs"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 rounded-md font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white flex items-center gap-1.5 shadow-xs transition text-xs"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>Submit Work Order</span>
+                {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>{isSubmitting ? 'Analyzing & Submitting...' : 'Submit Work Order'}</span>
               </button>
             </div>
           </form>

@@ -123,6 +123,41 @@ def is_agent_on_duty_nairobi(agent):
     except Exception:
         return True, 'on_duty', 'Available (On Duty)'
 
+GENERIC_CATEGORIES = {'', 'general field service', 'auto-detected (nlp)', 'auto'}
+
+
+def infer_task_domain_and_skills(title: str, description: str, agents_queryset=None):
+    """
+    Uses fine-tuned SBERT semantic similarity against enrolled technician profiles
+    to infer the closest service domain and prerequisite skills from natural language text.
+    """
+    text = f"{title}. {description}".strip()
+    if not text:
+        return 'General Field Service', []
+
+    model = get_sbert_model()
+    if model is not None and agents_queryset is not None:
+        try:
+            task_emb = model.encode(text, normalize_embeddings=True)
+            best_sim = -1.0
+            best_agent = None
+            for agent in agents_queryset:
+                emb = getattr(agent, 'skill_embedding', None)
+                if not emb:
+                    continue
+                sim = float(np.dot(task_emb, np.array(emb, dtype=np.float32)))
+                if sim > best_sim:
+                    best_sim = sim
+                    best_agent = agent
+            if best_agent is not None and best_sim >= 0.20:
+                skills = list(best_agent.skills[:3]) if isinstance(best_agent.skills, list) else []
+                return best_agent.domain, skills
+        except Exception as e:
+            print(f"[WARN] SBERT domain inference failed: {e}")
+
+    return 'General Field Service', []
+
+
 def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0.30, w_workload=0.20, max_radius_km=25.0):
     """
     Ranks all available agents for a task using multi-criteria composite formula,
@@ -131,7 +166,11 @@ def rank_candidates_for_task(task, available_agents, w_skill=0.50, w_proximity=0
     """
     candidates = []
 
-    task_full_text = f"{task.title}. {task.description}. Category: {task.category}."
+    raw_cat = (task.category or '').strip()
+    if raw_cat.lower() in GENERIC_CATEGORIES:
+        task_full_text = f"{task.title}. {task.description}"
+    else:
+        task_full_text = f"{task.title}. {task.description}. Category: {raw_cat}."
     required_skills = task.required_skills if isinstance(task.required_skills, list) else []
 
     # Encode task problem text once with fine-tuned Kenyan SBERT

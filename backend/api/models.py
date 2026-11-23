@@ -103,8 +103,8 @@ class Task(models.Model):
     requester = models.ForeignKey(User, on_delete=models.CASCADE, related_name='submitted_tasks', null=True, blank=True)
     title = models.CharField(max_length=255)
     description = models.TextField(help_text="Raw natural language customer problem statement")
-    category = models.CharField(max_length=100)
-    required_skills = models.JSONField(default=list, help_text="Identified prerequisite skills")
+    category = models.CharField(max_length=100, blank=True, default='General Field Service')
+    required_skills = models.JSONField(default=list, blank=True, help_text="Identified prerequisite skills")
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 

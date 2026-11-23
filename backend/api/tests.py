@@ -399,3 +399,34 @@ class APIRestEndpointsTests(TestCase):
         self.tech_profile.refresh_from_db()
         self.assertEqual(self.tech_profile.shift_name, 'Evening Emergency Standby')
         self.assertTrue(self.tech_profile.is_on_call)
+
+    def test_create_task_without_domain_or_skills_auto_infers(self):
+        response = self.client.post('/api/tasks/', {
+            'title': 'Server room cooling unit stopped blowing cold air',
+            'description': 'CRAC precision chiller keeps tripping with compressor alarm.',
+            'priority': 'critical',
+            'target_lat': -1.2921,
+            'target_lng': 36.8219,
+            'address_name': 'Upper Hill, Nairobi',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(bool(response.data['category']))
+
+    def test_analytics_summary_live_metrics(self):
+        # Assign and complete a task so Assignment scores & completion timing are recorded
+        self.client.post(f"/api/tasks/{self.task.id}/assign_agent/", {
+            'agent_id': self.tech_profile.id,
+            'score': 0.91,
+            's_skill': 0.96,
+            's_prox': 0.88,
+            's_work': 0.90,
+        }, format='json')
+        self.client.patch(f"/api/tasks/{self.task.id}/update_status/", {'status': 'completed'}, format='json')
+
+        response = self.client.get('/api/analytics/summary/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_assignments'], 1)
+        self.assertAlmostEqual(response.data['avg_skill_score'], 0.96)
+        self.assertEqual(response.data['completed_tasks'], 1)
+        self.assertEqual(len(response.data['recent_assignments']), 1)
+        self.assertEqual(response.data['recent_assignments'][0]['status'], 'completed')
