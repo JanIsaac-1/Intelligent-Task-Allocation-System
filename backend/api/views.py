@@ -17,6 +17,8 @@ from .allocation import (
     infer_task_domain_and_skills,
     calculate_haversine_distance,
     GENERIC_CATEGORIES,
+    compute_agent_embedding,
+    extract_profile_from_text,
 )
 
 # ==============================================================================
@@ -183,6 +185,99 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('-created_at')
     serializer_class = UserSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Creates a real system user with hashed password, role privileges, and AgentProfile when role='agent'."""
+        full_name = (request.data.get('full_name') or '').strip()
+        email = (request.data.get('email') or '').strip().lower()
+        password = (request.data.get('password') or '').strip()
+        phone = (request.data.get('phone') or '+254 700 000 000').strip()
+        role = (request.data.get('role') or 'requester').strip().lower()
+        department = (request.data.get('department') or '').strip()
+        user_status = (request.data.get('status') or 'active').strip().lower()
+
+        if not full_name:
+            return Response({'error': 'Full legal name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not email or '@' not in email:
+            return Response({'error': 'A valid email address is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(email=email).exists():
+            return Response({'error': 'An account with this email address already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if password and len(password) < 6:
+            return Response({'error': 'Password must be at least 6 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not password:
+            password = 'geotask123'
+
+        if role not in ['administrator', 'agent', 'requester']:
+            role = 'requester'
+        if user_status not in ['active', 'pending', 'suspended', 'locked']:
+            user_status = 'active'
+
+        base_username = email.split('@')[0].replace('.', '_').replace('-', '_') or 'user'
+        username = base_username
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        is_admin = (role == 'administrator')
+        default_dept = (
+            'Operations & Dispatch HQ' if is_admin
+            else ('Field Operations' if role == 'agent' else 'Client Operations')
+        )
+
+        user = User.objects.create(
+            username=username,
+            email=email,
+            full_name=full_name,
+            role=role,
+            phone=phone,
+            department=department or default_dept,
+            status=user_status,
+            is_staff=is_admin,
+            is_superuser=is_admin,
+        )
+        user.set_password(password)
+        user.save()
+
+        if role == 'agent':
+            domain = (request.data.get('domain') or 'Commercial Electrical Wiring & Distribution').strip()
+            title = (request.data.get('title') or 'Field Service Technician').strip()
+            skills = request.data.get('skills') or [domain]
+            if isinstance(skills, str):
+                skills = [s.strip() for s in skills.split(',') if s.strip()]
+            certifications = request.data.get('certifications') or []
+            if isinstance(certifications, str):
+                certifications = [c.strip() for c in certifications.split(',') if c.strip()]
+            exp_raw = request.data.get('experience_years')
+            exp_years = int(exp_raw) if exp_raw is not None and str(exp_raw).isdigit() else 2
+
+            agent = AgentProfile.objects.create(
+                user=user,
+                title=title,
+                domain=domain,
+                experience_years=max(1, exp_years),
+                skills=skills or [domain],
+                certifications=certifications,
+                bio=(request.data.get('bio') or '').strip(),
+                availability='available' if user_status == 'active' else 'offline',
+                current_lat=float(request.data.get('current_lat') or -1.2921),
+                current_lng=float(request.data.get('current_lng') or 36.8219),
+                current_address=(request.data.get('current_address') or 'Nairobi CBD').strip(),
+                battery_level=100,
+            )
+            emb = compute_agent_embedding(agent)
+            if emb is not None:
+                agent.skill_embedding = emb
+                agent.save(update_fields=['skill_embedding'])
+
+        PerformanceLog.objects.create(
+            action='User Account Provisioned',
+            details=f"Administrator created {role.upper()} account for {full_name} ({email}) - Status: {user_status.upper()}",
+            log_type='success' if user_status == 'active' else 'info',
+        )
+
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['patch', 'post'])
     def toggle_status(self, request, pk=None):
         user = self.get_object()
@@ -311,6 +406,87 @@ class AgentProfileViewSet(viewsets.ModelViewSet):
     queryset = AgentProfile.objects.all().order_by('-last_updated')
     serializer_class = AgentProfileSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Enrolls a new technician by creating linked User + AgentProfile + 384-d SBERT vector."""
+        full_name = (request.data.get('full_name') or request.data.get('name') or '').strip()
+        title = (request.data.get('title') or '').strip()
+        if not full_name or not title:
+            return Response(
+                {'error': 'Technician full name and job title are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        email = (request.data.get('email') or '').strip().lower()
+        if not email:
+            slug = '.'.join(full_name.lower().split()) or 'agent'
+            email = f"{slug}@geotask.ke"
+
+        if User.objects.filter(email=email).exists():
+            base_local, domain_part = email.split('@', 1)
+            idx = 1
+            while User.objects.filter(email=f"{base_local}{idx}@{domain_part}").exists():
+                idx += 1
+            email = f"{base_local}{idx}@{domain_part}"
+
+        base_username = email.split('@')[0].replace('.', '_').replace('-', '_')
+        username = base_username
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        domain = request.data.get('domain') or 'Commercial Electrical Wiring & Distribution'
+        phone = request.data.get('phone') or '+254 700 000 000'
+        password = request.data.get('password') or 'agent123'
+
+        user = User.objects.create(
+            username=username,
+            email=email,
+            full_name=full_name,
+            role='agent',
+            phone=phone,
+            department=domain,
+            status='active',
+        )
+        user.set_password(password)
+        user.save()
+
+        skills = request.data.get('skills') or [domain]
+        if isinstance(skills, str):
+            skills = [s.strip() for s in skills.split(',') if s.strip()]
+        certifications = request.data.get('certifications') or []
+        if isinstance(certifications, str):
+            certifications = [c.strip() for c in certifications.split(',') if c.strip()]
+
+        agent = AgentProfile.objects.create(
+            user=user,
+            title=title,
+            domain=domain,
+            experience_years=int(request.data.get('experience_years') or 1),
+            skills=skills,
+            certifications=certifications,
+            bio=request.data.get('bio') or '',
+            availability='available',
+            current_lat=float(request.data.get('current_lat') or -1.2921),
+            current_lng=float(request.data.get('current_lng') or 36.8219),
+            current_address=request.data.get('current_address') or 'Nairobi Metro',
+            battery_level=int(request.data.get('battery_level') or 100),
+        )
+
+        emb = compute_agent_embedding(agent)
+        if emb is not None:
+            agent.skill_embedding = emb
+            agent.save(update_fields=['skill_embedding'])
+
+        PerformanceLog.objects.create(
+            agent=agent,
+            action='Technician Enrolled',
+            details=f"Enrolled technician {full_name} ({title} - {domain}) with {len(skills)} skills.",
+            log_type='success',
+        )
+
+        return Response(AgentProfileSerializer(agent).data, status=status.HTTP_201_CREATED)
+
     def perform_update(self, serializer):
         instance = serializer.save()
         full_name = self.request.data.get('full_name')
@@ -324,6 +500,11 @@ class AgentProfileViewSet(viewsets.ModelViewSet):
             user_modified = True
         if user_modified:
             instance.user.save()
+
+        emb = compute_agent_embedding(instance)
+        if emb is not None:
+            instance.skill_embedding = emb
+            instance.save(update_fields=['skill_embedding'])
 
         PerformanceLog.objects.create(
             action='Technician Profile Updated',
@@ -435,9 +616,9 @@ class TaskViewSet(viewsets.ModelViewSet):
         Accepts dynamic weights: w_skill, w_proximity, w_workload
         """
         task = self.get_object()
-        w_skill = float(request.data.get('w_skill', 0.50))
-        w_proximity = float(request.data.get('w_proximity', 0.30))
-        w_workload = float(request.data.get('w_workload', 0.20))
+        w_skill = float(request.data.get('w_skill', 0.70))
+        w_proximity = float(request.data.get('w_proximity', 0.15))
+        w_workload = float(request.data.get('w_workload', 0.15))
         max_radius = float(request.data.get('max_radius_km', 25.0))
 
         # Filter active technicians
@@ -561,6 +742,20 @@ class TaskViewSet(viewsets.ModelViewSet):
                     details=f"Task '{task.title}' completed successfully by {agent.user.full_name}.",
                     log_type='success'
                 )
+            elif new_status == 'cancelled':
+                if task.assigned_agent:
+                    agent = task.assigned_agent
+                    agent.active_task_count = max(0, agent.active_task_count - 1)
+                    if agent.active_task_count < 2 and agent.availability == 'busy':
+                        agent.availability = 'available'
+                    agent.save()
+                    Assignment.objects.filter(task=task, agent=agent).exclude(status__in=['completed', 'cancelled']).update(status='cancelled')
+                PerformanceLog.objects.create(
+                    agent=task.assigned_agent,
+                    action='Work Order Cancelled',
+                    details=f"Work order '{task.title}' was cancelled.",
+                    log_type='warning'
+                )
 
             return Response(TaskSerializer(task).data)
         return Response({'error': 'Invalid status'}, status=status.HTTP_400_BAD_REQUEST)
@@ -572,56 +767,63 @@ class TaskViewSet(viewsets.ModelViewSet):
 @api_view(['POST'])
 def parse_cv_pdf(request):
     """
-    Accepts an uploaded PDF CV or document, extracts raw text with pypdf,
-    and returns detected skills, title, and domain.
+    Accepts an uploaded CV or Job Description (.pdf, .docx, or .txt), extracts raw text,
+    and returns SBERT-inferred domain, skills, certifications, contact info, and summary.
     """
-    pdf_file = request.FILES.get('file')
-    if not pdf_file:
-        return Response({'error': 'No PDF file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+    uploaded_file = request.FILES.get('file')
+    if not uploaded_file:
+        return Response({'error': 'No document file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+
+    filename = uploaded_file.name or ''
+    lower_name = filename.lower()
 
     try:
-        from pypdf import PdfReader
-        reader = PdfReader(pdf_file)
         full_text = ""
-        for page in reader.pages:
-            full_text += page.extract_text() or ""
+        if lower_name.endswith('.pdf'):
+            from pypdf import PdfReader
+            reader = PdfReader(uploaded_file)
+            for page in reader.pages:
+                full_text += (page.extract_text() or "") + "\n"
+        elif lower_name.endswith('.docx'):
+            import zipfile
+            import xml.etree.ElementTree as ET
+            with zipfile.ZipFile(uploaded_file) as zf:
+                xml_bytes = zf.read('word/document.xml')
+            tree = ET.fromstring(xml_bytes)
+            paragraphs = []
+            for p in tree.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
+                texts = [t.text for t in p.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t') if t.text]
+                if texts:
+                    paragraphs.append(''.join(texts))
+            full_text = '\n'.join(paragraphs)
+        elif lower_name.endswith('.txt') or lower_name.endswith('.md'):
+            raw_bytes = uploaded_file.read()
+            full_text = raw_bytes.decode('utf-8', errors='replace')
+        elif lower_name.endswith('.doc'):
+            return Response(
+                {'error': 'Legacy binary .doc files are not supported. Please save as .pdf, .docx, or .txt.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        else:
+            return Response(
+                {'error': 'Unsupported file type. Please upload a .pdf, .docx, or .txt CV/Job Description.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Basic skill and certification pattern identification
-        lower_text = full_text.lower()
-        extracted_skills = []
-        detected_certs = []
-        domain = "General Technical Services"
+        if not full_text.strip():
+            return Response(
+                {'error': 'Could not extract readable text from this file (it may be a scanned image PDF).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Domain matching keywords
-        if "fiber" in lower_text or "splic" in lower_text or "otdr" in lower_text:
-            domain = "Fiber Optic & ISP Last-Mile Splicing"
-            extracted_skills.extend(["Fiber fusion splicing", "OTDR trace analysis", "Optical power meter testing"])
-            if "foa" in lower_text:
-                detected_certs.append("FOA Certified Fiber Splicer")
-        elif "electric" in lower_text or "breaker" in lower_text or "3-phase" in lower_text or "epra" in lower_text:
-            domain = "Commercial Electrical Wiring & Distribution"
-            extracted_skills.extend(["3-phase power distribution", "Circuit breaker overhaul", "415V switchboard load balancing"])
-            if "epra" in lower_text:
-                detected_certs.append("EPRA Licensed Electrician")
-        elif "solar" in lower_text or "inverter" in lower_text or "photovoltaic" in lower_text:
-            domain = "Solar PV & Hybrid Inverter Systems"
-            extracted_skills.extend(["Hybrid solar inverter configuration", "Lithium battery storage", "PV string testing"])
-            detected_certs.append("EPRA Solar PV Class T3")
-        elif "plumb" in lower_text or "pipe" in lower_text or "drain" in lower_text or "booster" in lower_text:
-            domain = "Commercial Plumbing & High-Rise Booster Systems"
-            extracted_skills.extend(["High-pressure water booster pump repair", "PPR socket fusion welding", "Drainage clearing"])
-            detected_certs.append("Master Plumber License")
-
+        extracted = extract_profile_from_text(full_text, AgentProfile.objects.all())
         return Response({
-            'filename': pdf_file.name,
-            'char_count': len(full_text),
-            'detected_domain': domain,
-            'extracted_skills': list(set(extracted_skills)),
-            'detected_certifications': list(set(detected_certs)),
-            'text_preview': full_text[:400] + "..." if len(full_text) > 400 else full_text
+            'filename': filename,
+            'char_count': len(full_text.strip()),
+            **extracted,
         })
     except Exception as e:
-        return Response({'error': f"Error parsing PDF: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'error': f"Error parsing document: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==============================================================================

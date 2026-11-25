@@ -340,6 +340,11 @@ class APIRestEndpointsTests(TestCase):
         self.assertGreaterEqual(len(response.data['candidates']), 1)
         self.assertEqual(response.data['candidates'][0]['agent_id'], self.tech_profile.id)
 
+        # Verify default omitted weights use High-Precision Technical Match standard (0.70 / 0.15 / 0.15)
+        default_res = self.client.post(url, {}, format='json')
+        self.assertEqual(default_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(default_res.data['weights_applied'], {'w_skill': 0.70, 'w_proximity': 0.15, 'w_workload': 0.15})
+
     def test_assign_agent_endpoint(self):
         url = f"/api/tasks/{self.task.id}/assign_agent/"
         response = self.client.post(url, {
@@ -430,3 +435,254 @@ class APIRestEndpointsTests(TestCase):
         self.assertEqual(response.data['completed_tasks'], 1)
         self.assertEqual(len(response.data['recent_assignments']), 1)
         self.assertEqual(response.data['recent_assignments'][0]['status'], 'completed')
+
+    def test_parse_cv_txt_and_docx(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        import io
+        import zipfile
+
+        cv_text = (
+            "Name: Alex Mwende\n"
+            "Phone: +254 712 345 678\n"
+            "Email: alex.mwende@geotask.ke\n"
+            "Experience: 6 years of experience in fiber optic fusion splicing, OTDR trace analysis, and FTTH drop cabling.\n"
+            "Certifications: FOA Certified Fiber Splicer, Safety at Heights\n"
+        )
+        txt_file = SimpleUploadedFile('alex_cv.txt', cv_text.encode('utf-8'), content_type='text/plain')
+        res_txt = self.client.post('/api/parse-cv/', {'file': txt_file})
+        self.assertEqual(res_txt.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_txt.data['candidate_name'], 'Alex Mwende')
+        self.assertEqual(res_txt.data['detected_phone'], '+254 712 345 678')
+        self.assertEqual(res_txt.data['detected_experience_years'], 6)
+        self.assertIn('Fiber', res_txt.data['detected_domain'])
+        self.assertGreaterEqual(len(res_txt.data['extracted_skills']), 1)
+
+        # Verify .docx extraction via in-memory OOXML document
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w') as zf:
+            xml = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                '<w:body><w:p><w:r><w:t>Solar PV inverter installer with 5 years experience and EPRA Solar PV license.</w:t></w:r></w:p></w:body>'
+                '</w:document>'
+            )
+            zf.writestr('word/document.xml', xml)
+        docx_file = SimpleUploadedFile(
+            'solar_jd.docx',
+            buf.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        res_docx = self.client.post('/api/parse-cv/', {'file': docx_file})
+        self.assertEqual(res_docx.status_code, status.HTTP_200_OK)
+        self.assertIn('Solar', res_docx.data['detected_domain'])
+
+    def test_create_agent_enrollment_with_sbert_embedding(self):
+        response = self.client.post('/api/agents/', {
+            'full_name': 'Jane Wanjiru',
+            'phone': '+254 722 111 333',
+            'title': 'Solar PV & Hybrid Inverter Engineer',
+            'domain': 'Solar PV & Hybrid Inverter Systems',
+            'experience_years': 5,
+            'skills': ['Hybrid solar inverter configuration', 'Lithium battery storage'],
+            'certifications': ['EPRA Solar PV Class T3'],
+            'bio': 'Experienced off-grid and hybrid solar specialist.',
+            'current_lat': -1.2700,
+            'current_lng': 36.8100,
+            'current_address': 'Westlands, Nairobi',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        agent = AgentProfile.objects.get(id=response.data['id'])
+        self.assertEqual(agent.user.full_name, 'Jane Wanjiru')
+        self.assertIsNotNone(agent.skill_embedding)
+        self.assertEqual(len(agent.skill_embedding), 384)
+
+    def test_parse_cv_grounded_software_and_long_field_cv_accuracy(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        # 1. Software engineer CV should NEVER be misclassified into ATM/field trades or hallucinate ATM skills
+        swe_cv = (
+            "Jan Isaac\n"
+            "Nairobi, Kenya\n"
+            "+254 707 088 504\n"
+            "jano89995@gmail.com\n\n"
+            "PROFESSIONAL SUMMARY\n"
+            "Full-Stack Software Engineer with strong expertise in JavaScript ecosystems, specializing in\n"
+            "React.js and Node.js for building scalable web applications and backend systems. Experienced\n"
+            "in designing REST APIs and PostgreSQL data pipelines.\n\n"
+            "TECHNICAL SKILLS\n"
+            "Frontend: React.js, TypeScript, Tailwind CSS\n"
+            "Backend: Node.js, REST APIs, PostgreSQL, Docker\n\n"
+            "EXPERIENCE\n"
+            "Software Developer | Acme Tech | 2021 - 2025\n"
+        )
+        res_swe = self.client.post(
+            '/api/parse-cv/',
+            {'file': SimpleUploadedFile('jan_cv.txt', swe_cv.encode('utf-8'), content_type='text/plain')},
+        )
+        self.assertEqual(res_swe.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_swe.data['candidate_name'], 'Jan Isaac')
+        self.assertEqual(res_swe.data['detected_title'], 'Full-Stack Software Engineer')
+        self.assertEqual(res_swe.data['detected_domain'], 'Software Engineering & Full-Stack Systems')
+        self.assertEqual(res_swe.data['detected_experience_years'], 4)
+        self.assertIn('React.js', res_swe.data['extracted_skills'])
+        self.assertIn('Node.js', res_swe.data['extracted_skills'])
+        self.assertNotIn('ATM cash dispenser mechanism overhaul', res_swe.data['extracted_skills'])
+        self.assertTrue(res_swe.data['detected_bio'].startswith('Full-Stack Software Engineer'))
+        self.assertNotIn('+254', res_swe.data['detected_bio'])
+
+        # 2. Long field technician CV (>2000 chars) where domain skills appear near the bottom
+        filler_bio = "Experienced facility operations and building maintenance technician working across commercial properties in Nairobi. " * 22
+        long_plumbing_cv = (
+            "Name: Peter Kamau\n"
+            "Phone: +254 722 998 877\n\n"
+            f"PROFILE\n{filler_bio}\n\n"
+            "SKILLS\n"
+            "PPR socket fusion welding, High-pressure water booster pump repair, Pressure reducing valve calibration\n\n"
+            "CERTIFICATIONS\n"
+            "Master Plumber License, OSHA Safety\n"
+        )
+        self.assertGreater(len(long_plumbing_cv), 2000)
+        res_plm = self.client.post(
+            '/api/parse-cv/',
+            {'file': SimpleUploadedFile('peter_plumbing.txt', long_plumbing_cv.encode('utf-8'), content_type='text/plain')},
+        )
+        self.assertEqual(res_plm.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_plm.data['detected_domain'], 'Commercial Plumbing & High-Rise Booster Systems')
+        self.assertIn('PPR socket fusion welding', res_plm.data['extracted_skills'])
+        self.assertIn('Master Plumber License', res_plm.data['detected_certifications'])
+
+    def test_parse_cv_pdf_bullets_and_languages_subsection(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        pdf_style_cv = (
+            "JAN ISAAC\n"
+            "Full-Stack Software Engineer\n\n"
+            "SKILLS & COMPETENCIES\n"
+            "Languages: JavaScript, TypeScript, SQL\n"
+            "\uf0b7 React.js / Next.js / Tailwind CSS\n"
+            "• Node.js, Express.js, PostgreSQL, Docker\n\n"
+            "WORK EXPERIENCE\n"
+            "Backend Developer (2022 - Present)\n"
+        )
+        res = self.client.post(
+            '/api/parse-cv/',
+            {'file': SimpleUploadedFile('pdf_like.txt', pdf_style_cv.encode('utf-8'), content_type='text/plain')},
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['detected_domain'], 'Software Engineering & Full-Stack Systems')
+        self.assertIn('JavaScript', res.data['extracted_skills'])
+        self.assertIn('React.js', res.data['extracted_skills'])
+        self.assertIn('Node.js', res.data['extracted_skills'])
+        self.assertIn('PostgreSQL', res.data['extracted_skills'])
+
+    def test_admin_add_user_persists_login_and_agent_profile(self):
+        # 1. Admin creates a Field Agent via POST /api/users/
+        res_agent = self.client.post('/api/users/', {
+            'full_name': 'Mary Atieno',
+            'email': 'mary.atieno@geotask.ke',
+            'password': 'SecretPass123',
+            'phone': '+254 711 222 333',
+            'role': 'agent',
+            'department': 'Field Operations',
+            'status': 'active',
+            'title': 'Solar PV Field Technician',
+            'domain': 'Solar PV & Hybrid Inverter Systems',
+            'experience_years': 4,
+            'skills': ['Hybrid solar inverter configuration', 'Lithium battery diagnostics'],
+            'current_address': 'Kilimani, Nairobi',
+        }, format='json')
+        self.assertEqual(res_agent.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res_agent.data['email'], 'mary.atieno@geotask.ke')
+
+        # Verify AgentProfile & 384-d SBERT embedding were provisioned automatically
+        agent_profile = AgentProfile.objects.get(user__email='mary.atieno@geotask.ke')
+        self.assertEqual(agent_profile.title, 'Solar PV Field Technician')
+        self.assertEqual(agent_profile.availability, 'available')
+        self.assertIsNotNone(agent_profile.skill_embedding)
+        self.assertEqual(len(agent_profile.skill_embedding), 384)
+
+        # Verify the newly provisioned user can authenticate immediately
+        login_res = self.client.post('/api/auth/login/', {
+            'email': 'mary.atieno@geotask.ke',
+            'password': 'SecretPass123',
+        }, format='json')
+        self.assertEqual(login_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(login_res.data['role'], 'agent')
+
+        # 2. Duplicate email should be rejected cleanly with HTTP 400
+        dup_res = self.client.post('/api/users/', {
+            'full_name': 'Mary Duplicate',
+            'email': 'mary.atieno@geotask.ke',
+            'password': 'AnotherPass123',
+            'role': 'requester',
+        }, format='json')
+        self.assertEqual(dup_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', dup_res.data)
+
+    def test_requester_task_linking_and_cancel_pending_order(self):
+        requester_user = User.objects.create_user(
+            email='facility@westlands.ke',
+            username='facility_westlands',
+            full_name='Grace Njeri',
+            role='requester',
+            phone='+254 722 444 555',
+            status='active',
+        )
+        create_res = self.client.post('/api/tasks/', {
+            'title': 'Faulty 3-phase isolator switch at Westlands Annex',
+            'description': 'Main distribution breaker trips whenever backup power switches over.',
+            'priority': 'high',
+            'target_lat': -1.2635,
+            'target_lng': 36.8024,
+            'address_name': 'Westlands, Nairobi',
+            'requester': requester_user.id,
+        }, format='json')
+        self.assertEqual(create_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_res.data['requester'], requester_user.id)
+        self.assertEqual(create_res.data['requester_name'], 'Grace Njeri')
+        self.assertEqual(create_res.data['requester_phone'], '+254 722 444 555')
+
+        cancel_res = self.client.patch(
+            f"/api/tasks/{create_res.data['id']}/update_status/",
+            {'status': 'cancelled'},
+            format='json',
+        )
+        self.assertEqual(cancel_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(cancel_res.data['status'], 'cancelled')
+
+    def test_negative_sbert_similarity_never_outranks_matched_domain(self):
+        # Negative SBERT cosine similarity must stay low (<=0.05 base) rather than jumping to ~0.50
+        fridge_user = User.objects.create_user(
+            email='fridge@geotask.ke',
+            username='fridge_tech',
+            full_name='Eric Kibet',
+            role='agent',
+            status='active',
+        )
+        fridge_agent = AgentProfile.objects.create(
+            user=fridge_user,
+            title='Commercial Refrigeration Specialist',
+            domain='Commercial Cold Rooms & Supermarket Refrigeration',
+            skills=['Semi-hermetic compressor overhaul', 'Refrigerant R404A charging'],
+            availability='available',
+            current_lat=-1.286,
+            current_lng=36.817,
+        )
+        wisp_task = Task.objects.create(
+            title='Wifi connection fix',
+            description='The wifi in the office shows connected to the internet but pages do not load',
+            category='Point-to-Point Wireless & Microwave Internet (WISP)',
+            required_skills=['MikroTik RouterOS wireless configuration', 'Ubiquiti airMAX optimization'],
+            priority='high',
+            target_lat=-1.286,
+            target_lng=36.817,
+        )
+        # Align tech_profile to WISP domain for direct comparison
+        self.tech_profile.domain = 'Point-to-Point Wireless & Microwave Internet (WISP)'
+        self.tech_profile.skills = ['MikroTik RouterOS wireless configuration', 'Ubiquiti airMAX optimization']
+        self.tech_profile.save()
+
+        ranked = rank_candidates_for_task(wisp_task, [fridge_agent, self.tech_profile], w_skill=0.70, w_proximity=0.15, w_workload=0.15)
+        self.assertEqual(ranked[0]['agent_id'], self.tech_profile.id)
+        self.assertGreater(ranked[0]['skill_score'], 0.40)
+        self.assertLess(ranked[1]['skill_score'], 0.30)

@@ -1,5 +1,5 @@
 import { getAgentDutyStatus } from '../utils/duty';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Task, AgentProfile, AllocationWeights, AllocationScore } from '../types';
 import { rankCandidates } from '../services/api';
 import { formatDistance, calculateHaversineDistance, calculateProximityScore } from '../utils/geo';
@@ -27,14 +27,16 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showAllCandidates, setShowAllCandidates] = useState<boolean>(false);
+  const agentsRef = useRef<AgentProfile[]>(agents);
+  agentsRef.current = agents;
 
-  // Compute live ranking from Django SBERT & MCDM Allocation Engine
+  // Compute live ranking from Django SBERT & MCDM Allocation Engine without reloading on background agent polls
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
 
     const computeLocalCandidates = (): AllocationScore[] => {
-      return agents.map((agent) => {
+      return agentsRef.current.map((agent) => {
         const distanceKm = calculateHaversineDistance(
           agent.currentLocation.lat,
           agent.currentLocation.lng,
@@ -115,7 +117,7 @@ export const AllocationModal: React.FC<AllocationModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [task.id, weights.wSkill, weights.wProximity, weights.wWorkload, agents]);
+  }, [task.id, weights.wSkill, weights.wProximity, weights.wWorkload]);
 
   const topAgent = rankedCandidates[0];
   const chosenAgentId = selectedCandidateId || topAgent?.agentId;

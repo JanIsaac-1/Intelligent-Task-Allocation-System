@@ -92,7 +92,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* New Work Order - Admin or Requester */}
+          {/* Work Orders / New Work Order - Admin or Requester */}
           {(isAdmin || isRequester) && (
             <button
               onClick={() => onTabChange('requester')}
@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <PlusCircle className="w-3.5 h-3.5 text-slate-700" />
-              <span>New Work Order</span>
+              <span>{isRequester ? 'Work Orders' : 'New Work Order'}</span>
             </button>
           )}
 

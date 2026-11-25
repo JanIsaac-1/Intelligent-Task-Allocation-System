@@ -11,6 +11,7 @@ import {
 } from './types';
 import {
   DEFAULT_ALGORITHM_POLICY,
+  DEFAULT_ALLOCATION_WEIGHTS,
   PresetConfig,
 } from './data/config';
 import { Navbar, ActiveTab } from './components/Navbar';
@@ -32,8 +33,11 @@ import {
   updateAgentLocation,
   toggleAgentAvailability,
   updateAgentProfile,
+  createAgentProfile,
   updateUserStatusApi,
   approveUserApi,
+  createSystemUserApi,
+  CreateSystemUserInput,
   apiDenyUser,
   apiResetUserPassword,
   apiToggleUserLockout,
@@ -68,11 +72,7 @@ export const App: React.FC = () => {
 
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [weights, setWeights] = useState<AllocationWeights>({
-    wSkill: 0.50,
-    wProximity: 0.30,
-    wWorkload: 0.20,
-  });
+  const [weights, setWeights] = useState<AllocationWeights>(DEFAULT_ALLOCATION_WEIGHTS);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [policy, setPolicy] = useState<AlgorithmPolicy>(DEFAULT_ALGORITHM_POLICY);
   const [logs, setLogs] = useState<SystemLog[]>([]);
@@ -335,6 +335,12 @@ export const App: React.FC = () => {
         `'${targetTask.title}' marked as COMPLETED by field technician.`,
         'success'
       );
+    } else if (status === 'cancelled') {
+      addLog(
+        'Work Order Cancelled',
+        `'${targetTask.title}' was cancelled.`,
+        'warning'
+      );
     } else {
       addLog(
         'Status Updated',
@@ -351,14 +357,39 @@ export const App: React.FC = () => {
     }
   };
 
-  // Add new agent
-  const handleAddAgent = (newAgent: AgentProfile) => {
-    setAgents((prev) => [newAgent, ...prev]);
+  // Add new agent & persist to PostgreSQL with SBERT vector
+  const handleAddAgent = async (newAgent: AgentProfile & { password?: string }) => {
+    const { password, ...cleanAgent } = newAgent;
+    setAgents((prev) => [cleanAgent, ...prev]);
     addLog(
       'Technician Enrolled',
-      `Profile registered for ${newAgent.name} (${newAgent.title}) with ${newAgent.skills.length} extracted skills.`,
-      'info'
+      `Profile registered for ${cleanAgent.name} (${cleanAgent.title}) with ${cleanAgent.skills.length} extracted skills.`,
+      'success'
     );
+
+    try {
+      const savedAgent = await createAgentProfile({
+        name: cleanAgent.name,
+        email: cleanAgent.email,
+        ...(password ? { password } : {}),
+        phone: cleanAgent.phone,
+        title: cleanAgent.title,
+        domain: cleanAgent.domain,
+        experienceYears: cleanAgent.experienceYears,
+        skills: cleanAgent.skills,
+        certifications: cleanAgent.certifications,
+        bio: cleanAgent.bio,
+        lat: cleanAgent.currentLocation.lat,
+        lng: cleanAgent.currentLocation.lng,
+        addressName: cleanAgent.currentLocation.addressName,
+      });
+      setAgents((prev) =>
+        prev.map((a) => (a.id === cleanAgent.id ? savedAgent : a))
+      );
+      fetchUsers().then((users) => users && setSystemUsers(users)).catch(() => {});
+    } catch (err) {
+      console.warn('Could not persist enrolled agent to PostgreSQL:', err);
+    }
   };
 
   // Update existing technician profile
@@ -526,6 +557,7 @@ export const App: React.FC = () => {
         lat: newTask.location.lat,
         lng: newTask.location.lng,
         addressName: newTask.location.addressName,
+        requesterId: newTask.requesterId || currentUser?.id,
       });
 
       const syncedTask: Task = {
@@ -533,6 +565,7 @@ export const App: React.FC = () => {
         id: String(saved.id),
         category: saved.category || newTask.category,
         requiredSkills: saved.requiredSkills?.length ? saved.requiredSkills : newTask.requiredSkills,
+        requesterId: saved.requesterId || newTask.requesterId || (currentUser?.id ? String(currentUser.id) : undefined),
       };
 
       setTasks((prev) =>
@@ -545,14 +578,19 @@ export const App: React.FC = () => {
     }
   };
 
-  // Add system user
-  const handleAddUser = (newUser: SystemUser) => {
-    setSystemUsers((prev) => [newUser, ...prev]);
+  // Add system user (persisted to PostgreSQL backend)
+  const handleAddUser = async (payload: CreateSystemUserInput): Promise<SystemUser> => {
+    const savedUser = await createSystemUserApi(payload);
+    setSystemUsers((prev) => [savedUser, ...prev.filter((u) => u.id !== savedUser.id)]);
     addLog(
-      'User Account Created',
-      `New user ${newUser.fullName} (${newUser.role}) enrolled into ${newUser.department}.`,
-      'info'
+      'User Account Provisioned',
+      `Administrator created ${savedUser.role.toUpperCase()} account for ${savedUser.fullName} (${savedUser.email}).`,
+      'success'
     );
+    if (savedUser.role === 'agent') {
+      fetchAgents().then((list) => list && setAgents(list)).catch(() => {});
+    }
+    return savedUser;
   };
 
   // Update user status & approvals
@@ -768,7 +806,11 @@ export const App: React.FC = () => {
 
         {activeTab === 'requester' && (
           <TaskRequesterView
+            tasks={tasks}
+            agents={agents}
+            currentUser={currentUser}
             onCreateTask={handleCreateTask}
+            onUpdateTaskStatus={handleUpdateTaskStatus}
             onNavigateToAdmin={() => setActiveTab('admin')}
           />
         )}
@@ -778,6 +820,7 @@ export const App: React.FC = () => {
             systemUsers={systemUsers}
             agents={agents}
             onAddUser={handleAddUser}
+            onAddAgent={handleAddAgent}
             onUpdateUserStatus={handleUpdateUserStatus}
             onUpdateUserRole={handleUpdateUserRole}
             onApproveUser={handleApproveUser}

@@ -65,10 +65,17 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
   const currentAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
   const assignedTasks = tasks.filter((t) => t.assignedAgentId === currentAgent?.id);
   
-  // Tasks breakdown
-  const activeTask = assignedTasks.find((t) => t.status === 'in_progress') || 
-                     assignedTasks.find((t) => t.status === 'assigned');
-  const queueTasks = assignedTasks.filter((t) => t.status === 'assigned' && t.id !== activeTask?.id);
+  // Tasks breakdown (supports multiple concurrent active/in-progress work orders)
+  const inProgressTasks = assignedTasks.filter((t) => t.status === 'in_progress');
+  const pendingAssignedTasks = assignedTasks.filter((t) => t.status === 'assigned');
+  const activeTasks =
+    inProgressTasks.length > 0
+      ? inProgressTasks
+      : pendingAssignedTasks.slice(0, 1);
+  const queueTasks =
+    inProgressTasks.length > 0
+      ? pendingAssignedTasks
+      : pendingAssignedTasks.slice(1);
   const completedTasks = assignedTasks.filter((t) => t.status === 'completed');
 
   const handleGpsClick = () => {
@@ -266,10 +273,10 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
               }`}
             >
               <Navigation className="w-3.5 h-3.5" />
-              <span>Current Work Order</span>
-              {activeTask && (
+              <span>{activeTasks.length > 1 ? 'Active Work Orders' : 'Current Work Order'}</span>
+              {activeTasks.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-white text-blue-700 font-black">
-                  1
+                  {activeTasks.length}
                 </span>
               )}
             </button>
@@ -299,16 +306,17 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
             </button>
           </div>
 
-          {/* TAB 1: CURRENT ACTIVE TASK */}
+          {/* TAB 1: CURRENT ACTIVE TASKS */}
           {activeTab === 'current' && (
-            <div>
-              {activeTask ? (
-                <div className="bg-white border border-blue-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="space-y-4">
+              {activeTasks.length > 0 ? (
+                activeTasks.map((activeTask, activeIdx) => (
+                <div key={activeTask.id} className="bg-white border border-blue-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
                   {/* Status & Priority Badge */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                        Active Work Order
+                        {activeTasks.length > 1 ? `Active Work Order ${activeIdx + 1} of ${activeTasks.length}` : 'Active Work Order'}
                       </span>
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
@@ -464,6 +472,7 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                     )}
                   </div>
                 </div>
+                ))
               ) : (
                 /* No Active Task State */
                 <div className="bg-white border border-slate-200 rounded-xl p-8 sm:p-12 text-center space-y-3 shadow-xs">
@@ -505,7 +514,10 @@ export const AgentMobileView: React.FC<AgentMobileViewProps> = ({
                         <span>{t.location.addressName}</span>
                       </div>
                       <button
-                        onClick={() => onUpdateTaskStatus(t.id, 'in_progress')}
+                        onClick={() => {
+                          onUpdateTaskStatus(t.id, 'in_progress');
+                          setActiveTab('current');
+                        }}
                         className="text-xs font-bold text-blue-600 hover:text-blue-700"
                       >
                         Start Now &rarr;

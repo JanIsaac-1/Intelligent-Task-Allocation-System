@@ -70,6 +70,7 @@ export interface Task {
   status: TaskStatus;
   requesterName: string;
   requesterPhone: string;
+  requesterId?: string;
   assignedAgentId?: string;
   createdAt: string;
   deadline: string;
