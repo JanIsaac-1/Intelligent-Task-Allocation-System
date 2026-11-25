@@ -28,6 +28,9 @@ class AgentProfileSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     assigned_agent_details = AgentProfileSerializer(source='assigned_agent', read_only=True)
     requester_name = serializers.CharField(source='requester.full_name', read_only=True, default="Anonymous")
+    requester_phone = serializers.CharField(source='requester.phone', read_only=True, default="")
+    category = serializers.CharField(required=False, allow_blank=True, default='')
+    required_skills = serializers.JSONField(required=False, default=list)
 
     class Meta:
         model = Task
@@ -35,7 +38,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'category', 'required_skills',
             'priority', 'status', 'target_lat', 'target_lng', 'address_name',
             'assigned_agent', 'assigned_agent_details', 'requester',
-            'requester_name', 'deadline', 'estimated_hours', 'created_at', 'updated_at'
+            'requester_name', 'requester_phone', 'deadline', 'estimated_hours', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 

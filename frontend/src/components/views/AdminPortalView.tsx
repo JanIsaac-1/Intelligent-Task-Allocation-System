@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { SystemUser, AllocationWeights, AlgorithmPolicy, Role, AgentProfile } from '../../types';
-import { OPTIMIZATION_PRESETS, MASTER_DOMAINS, PresetConfig } from '../../data/config';
+import {
+  OPTIMIZATION_PRESETS,
+  DEFAULT_ALLOCATION_WEIGHTS,
+  MASTER_DOMAINS,
+  PresetConfig,
+} from '../../data/config';
 import {
   Users,
   Shield,
@@ -34,12 +39,18 @@ import {
   AlertCircle,
   ShieldCheck,
 } from 'lucide-react';
-import { apiFetchSecuritySettings, apiUpdateMasterKey } from '../../services/api';
+import {
+  apiFetchSecuritySettings,
+  apiUpdateMasterKey,
+  CreateSystemUserInput,
+} from '../../services/api';
+import { AddAgentModal } from '../AddAgentModal';
 
 interface AdminPortalViewProps {
   systemUsers: SystemUser[];
   agents?: AgentProfile[];
-  onAddUser: (user: SystemUser) => void;
+  onAddUser: (user: CreateSystemUserInput) => Promise<SystemUser | void>;
+  onAddAgent?: (agent: AgentProfile) => Promise<void> | void;
   onUpdateUserStatus: (userId: string, status: SystemUser['status']) => void;
   onUpdateUserRole: (userId: string, role: Role) => void;
   onApproveUser?: (userId: string) => Promise<void>;
@@ -67,6 +78,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   systemUsers,
   agents = [],
   onAddUser,
+  onAddAgent,
   onUpdateUserStatus,
   onUpdateUserRole,
   onApproveUser,
@@ -113,12 +125,26 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const [passcodeErrorMsg, setPasscodeErrorMsg] = useState('');
   const [copiedKey, setCopiedKey] = useState(false);
 
-  // New User Form State
+  // Editable Algorithm Preset Weights State
+  const [draftWeights, setDraftWeights] = useState<AllocationWeights>(currentWeights);
+  const [weightsSavedMsg, setWeightsSavedMsg] = useState('');
+
+  useEffect(() => {
+    setDraftWeights(currentWeights);
+  }, [currentWeights.wSkill, currentWeights.wProximity, currentWeights.wWorkload]);
+
+  // New User & Technician Enrollment Flow State
+  const [addUserStep, setAddUserStep] = useState<'choose' | 'administrator' | 'requester'>('choose');
+  const [showRegisterTechnicianModal, setShowRegisterTechnicianModal] = useState(false);
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [newPhone, setNewPhone] = useState('+254 7');
-  const [newRole, setNewRole] = useState<Role>('agent');
-  const [newDepartment, setNewDepartment] = useState('Field Operations');
+  const [newDepartment, setNewDepartment] = useState('Client Operations');
+  const [newStatus, setNewStatus] = useState<'active' | 'pending'>('active');
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [addUserError, setAddUserError] = useState('');
 
   // Load backend security settings
   useEffect(() => {
@@ -298,26 +324,76 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setNewMasterPasscode(code);
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newFullName || !newEmail) return;
-
-    const createdUser: SystemUser = {
-      id: `user-${Date.now()}`,
-      fullName: newFullName,
-      email: newEmail,
-      phone: newPhone,
-      role: newRole,
-      status: 'active',
-      department: newDepartment,
-      createdAt: new Date().toISOString().split('T')[0],
-      lastLogin: 'Never',
-    };
-
-    onAddUser(createdUser);
-    setShowAddUserModal(false);
+  const resetAddUserForm = () => {
+    setAddUserStep('choose');
     setNewFullName('');
     setNewEmail('');
+    setNewPassword('');
+    setShowNewPassword(false);
+    setNewPhone('+254 7');
+    setNewDepartment('Client Operations');
+    setNewStatus('active');
+    setAddUserError('');
+  };
+
+  const generateTempPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let pass = 'GT-';
+    for (let i = 0; i < 8; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewPassword(pass);
+    setShowNewPassword(true);
+  };
+
+  const selectAccountTypeForAddUser = (type: 'administrator' | 'requester' | 'agent') => {
+    setAddUserError('');
+    if (type === 'agent') {
+      setShowAddUserModal(false);
+      setShowRegisterTechnicianModal(true);
+      return;
+    }
+    setAddUserStep(type);
+    setNewDepartment(type === 'administrator' ? 'Operations & Dispatch HQ' : 'Client Operations');
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (addUserStep === 'choose') return;
+    setAddUserError('');
+
+    const trimmedName = newFullName.trim();
+    const trimmedEmail = newEmail.trim().toLowerCase();
+    const trimmedPass = newPassword.trim();
+
+    if (!trimmedName || !trimmedEmail) {
+      setAddUserError('Full name and email address are required.');
+      return;
+    }
+    if (trimmedPass.length < 6) {
+      setAddUserError('Password must be at least 6 characters so the user can sign in.');
+      return;
+    }
+
+    setCreatingUser(true);
+    try {
+      await onAddUser({
+        fullName: trimmedName,
+        email: trimmedEmail,
+        password: trimmedPass,
+        phone: newPhone.trim() || '+254 700 000 000',
+        role: addUserStep,
+        department: newDepartment.trim(),
+        status: newStatus,
+      });
+
+      resetAddUserForm();
+      setShowAddUserModal(false);
+    } catch (err: any) {
+      setAddUserError(err?.message || 'Could not create user account. Please check the fields and try again.');
+    } finally {
+      setCreatingUser(false);
+    }
   };
 
   return (
@@ -536,7 +612,10 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </div>
 
               <button
-                onClick={() => setShowAddUserModal(true)}
+                onClick={() => {
+                  resetAddUserForm();
+                  setShowAddUserModal(true);
+                }}
                 className="px-3 py-1.5 rounded-md text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 shadow-xs transition"
               >
                 <Plus className="w-4 h-4" />
@@ -1037,100 +1116,232 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       )}
 
       {/* TAB 5: ALGORITHM PRESETS & POLICY */}
-      {adminTab === 'algorithm' && (
-        <div className="space-y-6">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Optimization Scoring Presets</h3>
-                <p className="text-xs text-slate-500">
-                  Select a standardized operational profile to calibrate allocation behavior
-                </p>
+      {adminTab === 'algorithm' && (() => {
+        const standardPreset = OPTIMIZATION_PRESETS[0];
+        const totalPct = Math.round(
+          (draftWeights.wSkill + draftWeights.wProximity + draftWeights.wWorkload) * 100
+        );
+        const hasPendingChanges =
+          Math.abs(draftWeights.wSkill - currentWeights.wSkill) > 0.001 ||
+          Math.abs(draftWeights.wProximity - currentWeights.wProximity) > 0.001 ||
+          Math.abs(draftWeights.wWorkload - currentWeights.wWorkload) > 0.001;
+        const isAtStandardDefault =
+          Math.abs(draftWeights.wSkill - DEFAULT_ALLOCATION_WEIGHTS.wSkill) < 0.001 &&
+          Math.abs(draftWeights.wProximity - DEFAULT_ALLOCATION_WEIGHTS.wProximity) < 0.001 &&
+          Math.abs(draftWeights.wWorkload - DEFAULT_ALLOCATION_WEIGHTS.wWorkload) < 0.001 &&
+          !hasPendingChanges;
+
+        const updateWeightPart = (key: keyof AllocationWeights, rawPct: number) => {
+          const clampedPct = Math.max(0, Math.min(100, isNaN(rawPct) ? 0 : rawPct));
+          setDraftWeights((prev) => ({
+            ...prev,
+            [key]: parseFloat((clampedPct / 100).toFixed(2)),
+          }));
+          setWeightsSavedMsg('');
+        };
+
+        const handleNormalizeDraftWeights = () => {
+          const sum = draftWeights.wSkill + draftWeights.wProximity + draftWeights.wWorkload;
+          if (sum <= 0) {
+            setDraftWeights(DEFAULT_ALLOCATION_WEIGHTS);
+            return;
+          }
+          const sSkill = parseFloat((draftWeights.wSkill / sum).toFixed(2));
+          const sProx = parseFloat((draftWeights.wProximity / sum).toFixed(2));
+          const sWork = parseFloat(Math.max(0, 1 - sSkill - sProx).toFixed(2));
+          setDraftWeights({ wSkill: sSkill, wProximity: sProx, wWorkload: sWork });
+          setWeightsSavedMsg('');
+        };
+
+        const handleApplyConfiguredWeights = () => {
+          onApplyPreset({
+            ...standardPreset,
+            name:
+              Math.abs(draftWeights.wSkill - DEFAULT_ALLOCATION_WEIGHTS.wSkill) < 0.001 &&
+              Math.abs(draftWeights.wProximity - DEFAULT_ALLOCATION_WEIGHTS.wProximity) < 0.001 &&
+              Math.abs(draftWeights.wWorkload - DEFAULT_ALLOCATION_WEIGHTS.wWorkload) < 0.001
+                ? standardPreset.name
+                : 'High-Precision Technical Match (Customized)',
+            weights: draftWeights,
+          });
+          setWeightsSavedMsg(
+            `Updated active weights to Skill ${(draftWeights.wSkill * 100).toFixed(0)}% / Proximity ${(
+              draftWeights.wProximity * 100
+            ).toFixed(0)}% / Workload ${(draftWeights.wWorkload * 100).toFixed(0)}%.`
+          );
+        };
+
+        const handleResetStandardWeights = () => {
+          setDraftWeights(DEFAULT_ALLOCATION_WEIGHTS);
+          onApplyPreset(standardPreset);
+          setWeightsSavedMsg('Reset to High-Precision Standard (70% Skill / 15% Proximity / 15% Workload).');
+        };
+
+        const weightParts: Array<{
+          key: keyof AllocationWeights;
+          label: string;
+          hint: string;
+          accentClass: string;
+          valueClass: string;
+        }> = [
+          {
+            key: 'wSkill',
+            label: 'w₁ Skill Match (SBERT Semantic)',
+            hint: 'Controls how strongly semantic skill alignment drives technician rank',
+            accentClass: 'accent-blue-600',
+            valueClass: 'text-blue-700',
+          },
+          {
+            key: 'wProximity',
+            label: 'w₂ Geographic Proximity (Haversine)',
+            hint: 'Controls how much shorter travel distance boosts rank',
+            accentClass: 'accent-emerald-600',
+            valueClass: 'text-emerald-700',
+          },
+          {
+            key: 'wWorkload',
+            label: 'w₃ Workload Balance',
+            hint: 'Favors technicians with fewer currently active work orders',
+            accentClass: 'accent-slate-700',
+            valueClass: 'text-slate-800',
+          },
+        ];
+
+        return (
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Standard Optimization Algorithm Preset</h3>
+                  <p className="text-xs text-slate-500">
+                    High-Precision Technical Match is the platform standard—customize each weight component below
+                  </p>
+                </div>
+                <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-2.5 py-1 rounded border border-slate-200 self-start sm:self-auto">
+                  Active: S:{(currentWeights.wSkill * 100).toFixed(0)}% | P:{(currentWeights.wProximity * 100).toFixed(0)}% | W:{(currentWeights.wWorkload * 100).toFixed(0)}%
+                </span>
               </div>
-              <span className="text-xs text-slate-600 font-mono font-bold bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
-                Active Weights: S:{currentWeights.wSkill} | P:{currentWeights.wProximity} | W:{currentWeights.wWorkload}
-              </span>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {OPTIMIZATION_PRESETS.map((preset) => {
-                const isActive =
-                  currentWeights.wSkill === preset.weights.wSkill &&
-                  currentWeights.wProximity === preset.weights.wProximity &&
-                  currentWeights.wWorkload === preset.weights.wWorkload;
+              <div className="bg-white border border-blue-500 ring-1 ring-blue-500/40 rounded-xl p-5 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 pb-3.5">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-sm text-slate-900">{standardPreset.name}</h4>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                        {standardPreset.tag}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      {standardPreset.description}
+                    </p>
+                  </div>
 
-                return (
-                  <div
-                    key={preset.id}
-                    className={`bg-white border rounded-xl p-4 transition-all shadow-xs space-y-3 ${
-                      isActive
-                        ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50/30'
-                        : 'border-slate-200 hover:border-slate-300'
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded border ${
+                        totalPct === 100
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-300'
+                      }`}
+                    >
+                      Sum: {totalPct}%
+                    </span>
+                    {totalPct !== 100 && (
+                      <button
+                        type="button"
+                        onClick={handleNormalizeDraftWeights}
+                        className="text-[11px] px-2.5 py-1 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-semibold transition"
+                      >
+                        Normalize to 100%
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Individual Adjustable Components */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {weightParts.map((part) => {
+                    const pctValue = Math.round(draftWeights[part.key] * 100);
+                    return (
+                      <div
+                        key={part.key}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs font-bold text-slate-800">{part.label}</label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={pctValue}
+                              onChange={(e) => updateWeightPart(part.key, parseInt(e.target.value, 10))}
+                              className={`w-14 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-right font-mono font-bold text-xs focus:outline-none focus:border-blue-600 ${part.valueClass}`}
+                            />
+                            <span className="text-[11px] text-slate-500 font-semibold">%</span>
+                          </div>
+                        </div>
+
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={pctValue}
+                          onChange={(e) => updateWeightPart(part.key, parseInt(e.target.value, 10))}
+                          className={`w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer ${part.accentClass}`}
+                        />
+
+                        <p className="text-[11px] text-slate-500 leading-snug">{part.hint}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {weightsSavedMsg && (
+                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{weightsSavedMsg}</span>
+                  </div>
+                )}
+
+                <div className="pt-1 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={handleResetStandardWeights}
+                    disabled={isAtStandardDefault}
+                    className="px-3 py-1.5 rounded-md text-xs font-semibold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1.5 transition"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset to Standard (70% / 15% / 15%)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleApplyConfiguredWeights}
+                    disabled={!hasPendingChanges || totalPct === 0}
+                    className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
+                      !hasPendingChanges
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs disabled:opacity-50'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-xs text-slate-900">{preset.name}</h4>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-semibold border border-slate-200">
-                            {preset.tag}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                          {preset.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-500 block">w₁ Skill</span>
-                        <strong className="text-blue-700 font-mono">
-                          {(preset.weights.wSkill * 100).toFixed(0)}%
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500 block">w₂ Proximity</span>
-                        <strong className="text-emerald-700 font-mono">
-                          {(preset.weights.wProximity * 100).toFixed(0)}%
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-500 block">w₃ Workload</span>
-                        <strong className="text-slate-800 font-mono">
-                          {(preset.weights.wWorkload * 100).toFixed(0)}%
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="pt-1 flex justify-end">
-                      <button
-                        onClick={() => onApplyPreset(preset)}
-                        disabled={isActive}
-                        className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 ${
-                          isActive
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
-                            : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                        }`}
-                      >
-                        {isActive ? (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Currently Active</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-3.5 h-3.5" />
-                            <span>Apply Preset</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                    {!hasPendingChanges ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Weights Active</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>Apply Weights</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
 
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
             <h3 className="text-sm font-bold text-slate-900 border-b border-slate-200 pb-2.5">
@@ -1206,7 +1417,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* TAB 6: MASTER SKILLS TAXONOMY */}
       {adminTab === 'taxonomy' && (
@@ -1533,98 +1745,296 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
-      {/* Modal 4: Add User Modal */}
+      {/* Modal 4: Add User Modal (Account Type Selection -> Tailored Creation) */}
       {showAddUserModal && (
         <div className="fixed inset-0 z-[2000] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md shadow-2xl overflow-hidden text-xs">
+          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden text-xs">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-900">Add System User</h3>
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {addUserStep === 'choose'
+                    ? 'Add System User — Choose Account Type'
+                    : addUserStep === 'administrator'
+                    ? 'Create System Administrator Account'
+                    : 'Create Task Requester Account'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {addUserStep === 'choose'
+                    ? 'Each account role uses its own tailored onboarding and access permissions'
+                    : 'Provisions a verified login account persisted to PostgreSQL'}
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setShowAddUserModal(false)}
-                className="text-slate-400 hover:text-slate-700"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-200 transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} className="p-4 space-y-3">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Full Legal Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="e.g. Mary Atieno"
-                  className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
+            {addUserStep === 'choose' ? (
+              <div className="p-4 space-y-2.5">
+                <button
+                  type="button"
+                  onClick={() => selectAccountTypeForAddUser('agent')}
+                  className="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition flex items-start gap-3 group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <Briefcase className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">Field Technician / Agent</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        CV / JD Parser
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Opens the full Technician Registration form (CV/JD upload, SBERT skills extraction, domain, certifications & dispatch profile).
+                    </p>
+                  </div>
+                </button>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="e.g. mary.atieno@geotask.ke"
-                  className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
+                <button
+                  type="button"
+                  onClick={() => selectAccountTypeForAddUser('requester')}
+                  className="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 transition flex items-start gap-3 group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">Task Requester / Client</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                        Work Order Portal
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      For facility coordinators and clients who submit field service work orders and track dispatch progress.
+                    </p>
+                  </div>
+                </button>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Phone</label>
-                <input
-                  type="text"
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
+                <button
+                  type="button"
+                  onClick={() => selectAccountTypeForAddUser('administrator')}
+                  className="w-full text-left p-3.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition flex items-start gap-3 group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">System Administrator</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                        Full RBAC Access
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Full dispatcher control, pending user approvals, shift schedules, SBERT weight tuning, and audit logs.
+                    </p>
+                  </div>
+                </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Role</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value as Role)}
-                    className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                <div className="pt-2 flex justify-end border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserModal(false)}
+                    className="px-3 py-1.5 rounded text-slate-600 hover:bg-slate-100 font-semibold"
                   >
-                    <option value="administrator">Administrator</option>
-                    <option value="agent">Field Agent</option>
-                    <option value="requester">Task Requester</option>
-                  </select>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateUser} className="p-4 space-y-3 overflow-y-auto flex-1">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddUserError('');
+                      setAddUserStep('choose');
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    ← Change Account Type
+                  </button>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                      addUserStep === 'administrator'
+                        ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                        : 'bg-blue-100 text-blue-800 border border-blue-200'
+                    }`}
+                  >
+                    {addUserStep === 'administrator' ? 'Administrator' : 'Task Requester'}
+                  </span>
+                </div>
+
+                {addUserError && (
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 flex items-start gap-2 font-medium">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{addUserError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Full Legal Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={newFullName}
+                      onChange={(e) => setNewFullName(e.target.value)}
+                      placeholder="e.g. Mary Atieno"
+                      className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Phone</label>
+                    <input
+                      type="text"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      placeholder="+254 712 345 678"
+                      className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Department</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Email Address</label>
                   <input
-                    type="text"
-                    value={newDepartment}
-                    onChange={(e) => setNewDepartment(e.target.value)}
+                    type="email"
+                    required
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="e.g. mary.atieno@geotask.ke"
                     className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
                   />
                 </div>
-              </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setShowAddUserModal(false)}
-                  className="px-3 py-1.5 rounded text-slate-600 hover:bg-slate-100 font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                >
-                  Create User
-                </button>
-              </div>
-            </form>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700">Initial Password (min 6 chars)</label>
+                    <button
+                      type="button"
+                      onClick={generateTempPassword}
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                    >
+                      Generate Password
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter login password..."
+                      className="w-full bg-white border border-slate-300 rounded p-2 pr-9 text-slate-900 focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-700"
+                      title={showNewPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">
+                      {addUserStep === 'requester' ? 'Organization / Department' : 'Administrative Unit'}
+                    </label>
+                    <input
+                      type="text"
+                      value={newDepartment}
+                      onChange={(e) => setNewDepartment(e.target.value)}
+                      placeholder={
+                        addUserStep === 'requester'
+                          ? 'e.g. Westlands Property Mgmt'
+                          : 'e.g. Operations & Dispatch HQ'
+                      }
+                      className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Initial Status</label>
+                    <select
+                      value={newStatus}
+                      onChange={(e) => setNewStatus(e.target.value as 'active' | 'pending')}
+                      className="w-full bg-white border border-slate-300 rounded p-2 text-slate-900 focus:outline-none focus:border-blue-600"
+                    >
+                      <option value="active">Active (Immediate Login)</option>
+                      <option value="pending">Pending Approval</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    disabled={creatingUser}
+                    onClick={() => {
+                      const currentStep = addUserStep;
+                      resetAddUserForm();
+                      if (currentStep === 'administrator' || currentStep === 'requester') {
+                        setAddUserStep(currentStep);
+                        setNewDepartment(
+                          currentStep === 'administrator' ? 'Operations & Dispatch HQ' : 'Client Operations'
+                        );
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded text-slate-600 hover:bg-slate-100 border border-slate-200 font-semibold flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Clear Form</span>
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={creatingUser}
+                      onClick={() => setShowAddUserModal(false)}
+                      className="px-3 py-1.5 rounded text-slate-600 hover:bg-slate-100 font-semibold disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={creatingUser}
+                      className="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 disabled:opacity-60"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>
+                        {creatingUser
+                          ? 'Creating...'
+                          : addUserStep === 'administrator'
+                          ? 'Create Administrator'
+                          : 'Create Requester'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
+      )}
+
+      {/* Same Register Field Technician modal as the main page */}
+      {showRegisterTechnicianModal && onAddAgent && (
+        <AddAgentModal
+          onAddAgent={onAddAgent}
+          onClose={() => setShowRegisterTechnicianModal(false)}
+        />
       )}
     </div>
   );

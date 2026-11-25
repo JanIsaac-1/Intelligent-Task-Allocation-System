@@ -22,6 +22,7 @@ import { apiLogin, apiRegister } from '../../services/api';
 
 interface LoginViewProps {
   onLoginSuccess: (user: AuthUser, agentProfileId?: number | string) => void;
+  onRegistered?: () => void;
 }
 
 const COMMON_DOMAINS = [
@@ -37,7 +38,7 @@ const COMMON_DOMAINS = [
   'Elevator & Vertical Transport Maintenance',
 ];
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onRegistered }) => {
   const [activeMode, setActiveMode] = useState<'signin' | 'register'>('signin');
 
   // Sign-in Form State
@@ -124,6 +125,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       } else {
         setRegistrationSubmitted(res.user.email);
       }
+      onRegistered?.();
     } catch (err: any) {
       console.error('Registration failed:', err);
       setErrorMessage(err.message || 'Registration failed. An account with this email may already exist.');
@@ -138,10 +140,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           
           {/* Header */}
           <div className="mb-5">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-200 mb-2.5">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Role-Based Access Control (RBAC) & Governance
-            </div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               {activeMode === 'signin' ? 'Sign In to GeoTask' : 'Create an Account'}
             </h1>
@@ -614,13 +612,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               </div>
             </form>
           )}
-
-          <div className="mt-5 pt-4 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
-            <span>Connected to PostgreSQL (`geotask_db`)</span>
-            <span className="flex items-center gap-1 text-emerald-600 font-semibold">
-              <CheckCircle2 className="w-3 h-3" /> API Ready
-            </span>
-          </div>
       </div>
     </div>
   );

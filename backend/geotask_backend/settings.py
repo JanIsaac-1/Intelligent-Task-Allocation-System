@@ -5,16 +5,14 @@ Author: Jan Isaac Mwaniki Maina
 """
 
 import os
-import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from .env file (check backend/.env, then root .env)
+# Load environment variables from .env file
 load_dotenv(os.path.join(BASE_DIR, '.env'))
-load_dotenv(os.path.join(BASE_DIR.parent, '.env'))
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-geotask-default-key-2026')
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
@@ -70,17 +68,15 @@ TEMPLATES = [
 WSGI_APPLICATION = 'geotask_backend.wsgi.application'
 
 # ==============================================================================
-# DATABASE CONFIGURATION (POSTGRESQL WITH SQLITE FALLBACK FOR TESTING & CI)
+# DATABASE CONFIGURATION (POSTGRESQL WITH FALLBACK NOTICE)
 # ==============================================================================
 DB_NAME = os.getenv('DB_NAME', 'geotask_db')
 DB_USER = os.getenv('DB_USER', 'postgres')
 DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 DB_HOST = os.getenv('DB_HOST', 'localhost')
 DB_PORT = os.getenv('DB_PORT', '5432')
-DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.postgresql')
 
-# If running automated tests or explicit SQLite flag, use fast SQLite in-memory database
-if 'test' in sys.argv or os.getenv('USE_SQLITE', 'False').lower() in ('true', '1', 'yes') or DB_ENGINE == 'django.db.backends.sqlite3':
+if os.getenv('USE_SQLITE', 'False').lower() in ('true', '1', 'yes'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',

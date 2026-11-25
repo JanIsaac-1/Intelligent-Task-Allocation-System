@@ -1,4 +1,4 @@
-import { AgentProfile, Task, AllocationWeights, AuthUser, SystemUser, SystemLog } from '../types';
+import { AgentProfile, Task, AllocationWeights, AuthUser, SystemUser, SystemLog, AnalyticsSummary } from '../types';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -150,7 +150,8 @@ export async function fetchTasks(): Promise<Task[]> {
     priority: t.priority,
     status: t.status,
     requesterName: t.requester_name || 'Anonymous',
-    requesterPhone: '+254 700 000 000',
+    requesterPhone: t.requester_phone || '+254 700 000 000',
+    requesterId: t.requester ? String(t.requester) : undefined,
     assignedAgentId: t.assigned_agent ? String(t.assigned_agent) : undefined,
     createdAt: t.created_at ? new Date(t.created_at).toLocaleDateString() : 'Today',
     deadline: t.deadline || 'Within 4 hours',
@@ -167,7 +168,13 @@ export async function createTask(taskData: {
   lat: number;
   lng: number;
   addressName: string;
+  requesterId?: string | number;
 }): Promise<Task> {
+  const numericRequester =
+    taskData.requesterId !== undefined && taskData.requesterId !== '' && !isNaN(Number(taskData.requesterId))
+      ? Number(taskData.requesterId)
+      : undefined;
+
   const payload = {
     title: taskData.title,
     description: taskData.description,
@@ -178,6 +185,7 @@ export async function createTask(taskData: {
     target_lng: taskData.lng,
     address_name: taskData.addressName,
     status: 'pending',
+    ...(numericRequester ? { requester: numericRequester } : {}),
   };
 
   const t = await request<any>('/tasks/', {
@@ -198,8 +206,9 @@ export async function createTask(taskData: {
     },
     priority: t.priority,
     status: t.status,
-    requesterName: 'Task Requester',
-    requesterPhone: '+254 700 000 000',
+    requesterName: t.requester_name || 'Task Requester',
+    requesterPhone: t.requester_phone || '+254 700 000 000',
+    requesterId: t.requester ? String(t.requester) : (numericRequester ? String(numericRequester) : undefined),
     createdAt: 'Just now',
     deadline: 'Within 4 hours',
     estimatedHours: 2.0,
@@ -240,13 +249,19 @@ export async function rankCandidates(
 export async function assignAgentToTask(
   taskId: string | number,
   agentId: string | number,
-  score: number
+  score: number,
+  breakdown?: { sSkill: number; sProx: number; sWork: number }
 ): Promise<any> {
   return request(`/tasks/${taskId}/assign_agent/`, {
     method: 'POST',
     body: JSON.stringify({
       agent_id: agentId,
       score: score,
+      ...(breakdown ? {
+        s_skill: breakdown.sSkill,
+        s_prox: breakdown.sProx,
+        s_work: breakdown.sWork,
+      } : {}),
     }),
   });
 }
@@ -351,13 +366,83 @@ export async function updateAgentProfile(
   });
 }
 
+export async function createAgentProfile(agentData: {
+  name: string;
+  email?: string;
+  password?: string;
+  phone: string;
+  title: string;
+  domain: string;
+  experienceYears: number;
+  skills: string[];
+  certifications: string[];
+  bio: string;
+  lat: number;
+  lng: number;
+  addressName: string;
+}): Promise<AgentProfile> {
+  const a = await request<any>('/agents/', {
+    method: 'POST',
+    body: JSON.stringify({
+      full_name: agentData.name,
+      email: agentData.email,
+      ...(agentData.password ? { password: agentData.password } : {}),
+      phone: agentData.phone,
+      title: agentData.title,
+      domain: agentData.domain,
+      experience_years: agentData.experienceYears,
+      skills: agentData.skills,
+      certifications: agentData.certifications,
+      bio: agentData.bio,
+      current_lat: agentData.lat,
+      current_lng: agentData.lng,
+      current_address: agentData.addressName,
+    }),
+  });
+
+  return {
+    id: String(a.id),
+    name: a.full_name || agentData.name,
+    email: a.email || agentData.email || '',
+    phone: a.phone || agentData.phone,
+    role: 'agent',
+    title: a.title,
+    domain: a.domain,
+    experienceYears: a.experience_years || agentData.experienceYears,
+    skills: a.skills || agentData.skills,
+    certifications: a.certifications || agentData.certifications,
+    bio: a.bio || agentData.bio,
+    availability: a.availability || 'available',
+    currentLocation: {
+      lat: a.current_lat || agentData.lat,
+      lng: a.current_lng || agentData.lng,
+      addressName: a.current_address || agentData.addressName,
+    },
+    activeTaskCount: a.active_task_count || 0,
+    completedTasksCount: a.completed_tasks_count || 0,
+    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    batteryLevel: a.battery_level || 100,
+    lastUpdated: 'Just now',
+    shiftName: a.shift_name || 'Standard Business (08:00 - 17:00)',
+    shiftStart: a.shift_start || '08:00',
+    shiftEnd: a.shift_end || '17:00',
+    isOnCall: Boolean(a.is_on_call),
+  };
+}
+
 // ----------------------------------------------------------------------
-// PDF CV Parsing
+// PDF / DOCX / TXT CV & JD Parsing
 // ----------------------------------------------------------------------
 export async function uploadCvPdf(file: File): Promise<{
+  candidate_name?: string;
+  detected_email?: string;
+  detected_phone?: string;
+  detected_experience_years?: number | null;
+  detected_title?: string;
   detected_domain: string;
   extracted_skills: string[];
   detected_certifications: string[];
+  detected_bio?: string;
   text_preview: string;
 }> {
   const formData = new FormData();
@@ -369,7 +454,8 @@ export async function uploadCvPdf(file: File): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error('Failed to parse PDF document on backend');
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || 'Failed to parse document on backend');
   }
 
   return response.json();
@@ -393,6 +479,53 @@ export async function fetchUsers(): Promise<SystemUser[]> {
     createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Recent',
     lastLogin: 'Active',
   }));
+}
+
+export interface CreateSystemUserInput {
+  fullName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  role: 'administrator' | 'agent' | 'requester';
+  department?: string;
+  status?: 'active' | 'pending';
+  title?: string;
+  domain?: string;
+  experienceYears?: number;
+  skills?: string[];
+  currentAddress?: string;
+}
+
+export async function createSystemUserApi(payload: CreateSystemUserInput): Promise<SystemUser> {
+  const u = await request<any>('/users/', {
+    method: 'POST',
+    body: JSON.stringify({
+      full_name: payload.fullName,
+      email: payload.email,
+      password: payload.password,
+      phone: payload.phone,
+      role: payload.role,
+      department: payload.department,
+      status: payload.status || 'active',
+      title: payload.title,
+      domain: payload.domain,
+      experience_years: payload.experienceYears,
+      skills: payload.skills,
+      current_address: payload.currentAddress,
+    }),
+  });
+
+  return {
+    id: String(u.id),
+    fullName: u.full_name || payload.fullName,
+    email: u.email || payload.email,
+    phone: u.phone || payload.phone || '+254 700 000 000',
+    role: u.role || payload.role,
+    status: u.status || payload.status || 'active',
+    department: u.department || payload.department || 'General Operations',
+    createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Just now',
+    lastLogin: 'Never',
+  };
 }
 
 export async function updateUserStatusApi(userId: string | number, status: string): Promise<any> {
@@ -426,6 +559,15 @@ export async function fetchLogs(): Promise<SystemLog[]> {
   } catch (err) {
     console.warn('Failed to fetch logs from backend:', err);
     return [];
+  }
+}
+
+export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary | null> {
+  try {
+    return await request<AnalyticsSummary>('/analytics/summary/');
+  } catch (err) {
+    console.warn('Failed to fetch analytics summary from backend:', err);
+    return null;
   }
 }
 

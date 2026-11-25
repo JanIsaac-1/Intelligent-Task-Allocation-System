@@ -70,6 +70,7 @@ export interface Task {
   status: TaskStatus;
   requesterName: string;
   requesterPhone: string;
+  requesterId?: string;
   assignedAgentId?: string;
   createdAt: string;
   deadline: string;
@@ -111,4 +112,51 @@ export interface SystemLog {
   action: string;
   details: string;
   type: 'info' | 'success' | 'warning' | 'error';
+}
+
+export interface AssignmentAuditRecord {
+  id: number;
+  task_id: number;
+  task_title: string;
+  task_category: string;
+  task_status: string;
+  agent_name: string;
+  agent_domain: string;
+  allocation_score: number;
+  skill_score: number;
+  proximity_score: number;
+  workload_score: number;
+  distance_km: number;
+  status: string;
+  assigned_at: string;
+  completed_at: string | null;
+}
+
+export interface DomainBreakdownItem {
+  domain: string;
+  total: number;
+  pending: number;
+  active: number;
+  completed: number;
+}
+
+export interface AnalyticsSummary {
+  total_tasks: number;
+  pending_tasks: number;
+  assigned_tasks: number;
+  in_progress_tasks: number;
+  completed_tasks: number;
+  completion_rate_pct: number;
+  total_assignments: number;
+  avg_composite_score: number | null;
+  avg_skill_score: number | null;
+  avg_proximity_score: number | null;
+  avg_workload_score: number | null;
+  avg_dispatch_distance_km: number | null;
+  avg_baseline_distance_km: number | null;
+  distance_optimization_pct: number | null;
+  avg_response_minutes: number | null;
+  fairness_index: number;
+  recent_assignments: AssignmentAuditRecord[];
+  domain_breakdown: DomainBreakdownItem[];
 }

@@ -10,34 +10,15 @@ export interface PresetConfig {
 
 export const OPTIMIZATION_PRESETS: PresetConfig[] = [
   {
-    id: 'preset-balanced',
-    name: 'Balanced Dispatch (Standard)',
-    description: 'Evenly distributes focus across skill compatibility, proximity, and workload.',
-    tag: 'Standard Default',
-    weights: { wSkill: 0.50, wProximity: 0.30, wWorkload: 0.20 }
-  },
-  {
-    id: 'preset-emergency',
-    name: 'Emergency Rapid Response',
-    description: 'Heavily prioritizes nearest geographic proximity for critical outages and urgent breakdowns.',
-    tag: 'Proximity Focus',
-    weights: { wSkill: 0.25, wProximity: 0.60, wWorkload: 0.15 }
-  },
-  {
     id: 'preset-technical',
-    name: 'High-Precision Technical Match',
-    description: 'Prioritizes exact certified technical competencies and experience over distance.',
-    tag: 'Skill Focus',
+    name: 'High-Precision Technical Match (Standard)',
+    description: 'Prioritizes exact certified technical competencies and semantic skill compatibility over distance, with adjustable weights per component.',
+    tag: 'Standard Default',
     weights: { wSkill: 0.70, wProximity: 0.15, wWorkload: 0.15 }
-  },
-  {
-    id: 'preset-fairness',
-    name: 'Workload Fairness & Equity',
-    description: 'Prioritizes underutilized technicians to balance distribution across all active agents.',
-    tag: 'Workload Focus',
-    weights: { wSkill: 0.40, wProximity: 0.20, wWorkload: 0.40 }
   }
 ];
+
+export const DEFAULT_ALLOCATION_WEIGHTS: AllocationWeights = OPTIMIZATION_PRESETS[0].weights;
 
 export const DEFAULT_ALGORITHM_POLICY: AlgorithmPolicy = {
   maxProximityRadiusKm: 25,

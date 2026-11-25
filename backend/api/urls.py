@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     UserViewSet, AgentProfileViewSet, TaskViewSet,
-    PerformanceLogViewSet, api_login, api_register, api_logout, parse_cv_pdf, system_security_settings
+    PerformanceLogViewSet, api_login, api_register, api_logout, parse_cv_pdf, system_security_settings, analytics_summary
 )
 
 router = DefaultRouter()
@@ -22,6 +22,9 @@ urlpatterns = [
 
     # System Security & Master Passcode
     path('system/security/', system_security_settings, name='system_security'),
+
+    # Live Analytics & Audit Summary
+    path('analytics/summary/', analytics_summary, name='analytics_summary'),
 
     # ViewSet CRUD routes
     path('', include(router.urls)),
